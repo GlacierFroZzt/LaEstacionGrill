@@ -1154,3 +1154,20 @@
      - Soporta `import.meta.env.VITE_SUPABASE_URL` e `import.meta.env.VITE_SUPABASE_ANON_KEY` desde el panel de Vercel, conservando los valores predeterminados de alta disponibilidad como fallback automático.
   4. **Scripts de Lanzamiento:**
      - Agregado `"deploy:vercel": "pnpm dlx vercel --prod"` en `frontend/package.json` y en el `package.json` raíz para publicar directamente con un solo comando o sincronizar automáticamente mediante push a GitHub.
+
+
+## 16. Inicialización, Depuración y Publicación Oficial en GitHub
+- **Requerimiento del Usuario:**
+  - *"Ayudame a subirlo a github: https://github.com/GlacierFroZzt/LaEstacionGrill"*.
+- **Acciones y Buenas Prácticas Aplicadas:**
+  1. **Configuración de `.gitignore` Integral:**
+     - Se protegieron todas las carpetas `node_modules` (raíz, `frontend/`, `servidor/`), caché de Gradle (`.gradle/`, `build/`, `app/build/`), ejecutables binarios (`.apk`, `.zip`, `.tar.gz`), bases de datos SQLite locales (`*.db`, `*.db-shm`, `*.db-wal`) y temporales de Kotlin (`.kotlin/`).
+  2. **Depuración de Artefactos Obsoletos en Android e iOS:**
+     - Se detectó que las carpetas nativas acumulaban 295 archivos históricos de hashes previos de Vite.
+     - Se purgó el directorio `app/src/main/assets/web/assets/` y se actualizaron los scripts `sync:android` y `sync:ios` en `package.json` para que siempre limpien antes de copiar, reduciendo el conteo a los 11 archivos de producción actuales.
+  3. **Inicialización y Primer Commit:**
+     - Inicializado el repositorio en la rama principal `main`.
+     - Commit inicial limpio: `feat: lanzamiento oficial de produccion v1.2.0 para La Estacion Grill`.
+  4. **Vinculación y Push Remoto:**
+     - Remoto configurado a `https://github.com/GlacierFroZzt/LaEstacionGrill.git`.
+     - Publicación exitosa de la rama `main` vinculada con seguimiento upstream (`origin/main`).
