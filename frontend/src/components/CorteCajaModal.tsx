@@ -205,7 +205,6 @@ export const CorteCajaModal: React.FC<CorteCajaModalProps> = ({ onCerrar }) => {
                 <p className="text-xs text-stone-400 mt-1">
                   Acceso restringido para corte de turno y métricas de venta.
                 </p>
-                <p className="text-[11px] text-amber-500 mt-0.5">PIN por defecto: 2430</p>
               </div>
 
               {/* Indicadores visuales de 4 dígitos */}

@@ -1171,3 +1171,25 @@
   4. **Vinculación y Push Remoto:**
      - Remoto configurado a `https://github.com/GlacierFroZzt/LaEstacionGrill.git`.
      - Publicación exitosa de la rama `main` vinculada con seguimiento upstream (`origin/main`).
+
+
+## 17. Reforzamiento de Seguridad: Eliminación de Contraseñas y PINs Visibles en UI (v1.2.1)
+- **Requerimiento del Usuario:**
+  - *"Quita todas las contraseñas visibles para el usuario, eso esta mal"*.
+- **Diagnóstico y Vulnerabilidades Resueltas:**
+  1. En [`PantallaBloqueoPin.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/PantallaBloqueoPin.tsx):
+     - Existía un pie de página que mostraba `"PIN maestro inicial (6 dígitos): 243000"` e incluso un botón que al pulsarlo auto-escribía y enviaba la clave.
+     - *Corrección:* Se eliminó la exposición de la clave y el botón de auto-llenado. Se reemplazó por un aviso genérico de terminal protegida para personal autorizado.
+  2. En [`CorteCajaModal.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/CorteCajaModal.tsx):
+     - El diálogo de confirmación de corte mostraba `<p>PIN por defecto: 2430</p>`, permitiendo que cualquier persona con acceso a la pantalla viera la clave de administración.
+     - *Corrección:* Se suprimió por completo dicho párrafo.
+  3. En [`ModalConfiguracionServidor.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalConfiguracionServidor.tsx):
+     - Los campos de entrada tenían `placeholder="Ej. 243000"` y en el pie figuraba `"PIN de fábrica inicial: 243000"`.
+     - *Corrección:* Se sustituyeron por placeholders enmascarados `••••••` y el texto por `"Ingresa 6 dígitos confidenciales"`.
+  4. En [`datosTutorial.ts`](file:///d:/TaqueriaKm243/frontend/src/services/datosTutorial.ts):
+     - El manual explicativo mencionaba explícitamente el PIN.
+     - *Corrección:* Se modificó a `"Solicita el PIN de seguridad al administrador o encargado del restaurante."`.
+- **Despliegue y Sincronización v1.2.1:**
+  - Incrementado a **v1.2.1** en `version.json`, `package.json` y `app/build.gradle.kts`.
+  - Compilación de TypeScript aprobada con 0 errores.
+  - Sincronización a Android e iOS y despliegue OTA exitoso en Supabase Storage.

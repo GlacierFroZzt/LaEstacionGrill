@@ -254,23 +254,10 @@ export const PantallaBloqueoPin: React.FC = () => {
           </button>
         </div>
 
-        {/* Nota de ayuda discreta para la primera configuración */}
-        <div className="p-2.5 rounded-xl bg-stone-950/60 border border-stone-900 text-[11px] text-stone-500 flex items-center gap-2">
+        {/* Nota de seguridad discreta */}
+        <div className="p-2.5 rounded-xl bg-stone-950/60 border border-stone-900 text-[11px] text-stone-500 flex items-center justify-center gap-2">
           <ShieldCheck className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-          <span>
-            PIN maestro inicial (6 dígitos):{' '}
-            <button
-              type="button"
-              disabled={estaBloqueadoPorTiempo}
-              onClick={() => {
-                setPin('243000');
-                setTimeout(() => procesarIntentoPin('243000'), 50);
-              }}
-              className="text-amber-400/90 font-mono font-bold hover:underline cursor-pointer disabled:opacity-30 disabled:no-underline"
-            >
-              243000
-            </button>
-          </span>
+          <span>Terminal protegida · Acceso exclusivo para personal autorizado</span>
         </div>
       </div>
     </div>

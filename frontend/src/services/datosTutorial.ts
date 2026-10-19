@@ -178,7 +178,7 @@ export const FICHAS_MANUAL: readonly FichaManual[] = [
     resumen: 'Protección contra accesos no autorizados en iPhone, tablets y web.',
     pasos: [
       'Cada vez que se abra o inicie la app, se solicitará el PIN maestro de 6 dígitos.',
-      'PIN predeterminado inicial: 243000 (o 243243).',
+      'Solicita el PIN de seguridad al administrador o encargado del restaurante.',
       'Si dejas el celular en una mesa o terminas turno, abre el menú ☰ y pulsa "🔒 Bloquear Terminal".',
       'Si se intentan códigos erróneos, el sistema se bloquea temporalmente por seguridad (30s, 2m, 15m).',
       'Puedes cambiar el PIN en cualquier momento desde el modal de Configuración.',

@@ -1,9 +1,9 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792330000000,
-  "fecha": "18 de octubre de 2026",
-  "notas": "Versión Oficial para Operación en Producción: protección global de interfaz con ErrorBoundary, responsividad universal probada, sincronización en tiempo real con Supabase y modo offline garantizado."
+  "timestamp": 1792332000000,
+  "fecha": "19 de octubre de 2026",
+  "notas": "Reforzamiento de seguridad: eliminación total de contraseñas, PINs y pistas visibles en la interfaz de usuario."
 }
 
 

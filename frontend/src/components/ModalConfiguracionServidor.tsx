@@ -203,7 +203,7 @@ export const ModalConfiguracionServidor: React.FC<PropsModalConfiguracionServido
                   type="password"
                   maxLength={6}
                   inputMode="numeric"
-                  placeholder="Ej. 243000"
+                  placeholder="••••••"
                   value={pinActualInput}
                   onChange={(e) => setPinActualInput(e.target.value.replace(/\D/g, ''))}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white tracking-widest placeholder:text-slate-600 focus:outline-none focus:border-amber-500 font-mono"
@@ -218,7 +218,7 @@ export const ModalConfiguracionServidor: React.FC<PropsModalConfiguracionServido
                   type="password"
                   maxLength={6}
                   inputMode="numeric"
-                  placeholder="Nuevo PIN (6 dígitos)"
+                  placeholder="••••••"
                   value={pinNuevoInput}
                   onChange={(e) => setPinNuevoInput(e.target.value.replace(/\D/g, ''))}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white tracking-widest placeholder:text-slate-600 focus:outline-none focus:border-amber-500 font-mono"
@@ -245,7 +245,7 @@ export const ModalConfiguracionServidor: React.FC<PropsModalConfiguracionServido
 
             <div className="flex items-center justify-between pt-1">
               <span className="text-[10px] text-slate-500">
-                PIN de fábrica inicial: <span className="text-amber-400 font-mono font-bold">243000</span>
+                Ingresa 6 dígitos confidenciales
               </span>
               <button
                 type="submit"
