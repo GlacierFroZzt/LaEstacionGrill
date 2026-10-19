@@ -36,9 +36,36 @@ export class ServicioSupabaseLogs {
   }
 
   /**
+   * Verifica si la tabla 'logs_sistema' ya existe en Supabase y es accesible.
+   */
+  public async verificarEstadoTabla(): Promise<{ tablaExiste: boolean; mensajeError?: string }> {
+    try {
+      const { error } = await this.cliente
+        .from('logs_sistema')
+        .select('id')
+        .limit(1);
+
+      if (error) {
+        if (error.code === 'PGRST205' || error.message.includes('Could not find the table')) {
+          return {
+            tablaExiste: false,
+            mensajeError: 'La tabla "logs_sistema" no existe aún en tu base de datos de Supabase.',
+          };
+        }
+        return { tablaExiste: false, mensajeError: error.message };
+      }
+
+      return { tablaExiste: true };
+    } catch (err: unknown) {
+      const mensaje = err instanceof Error ? err.message : 'Error al verificar conexión';
+      return { tablaExiste: false, mensajeError: mensaje };
+    }
+  }
+
+  /**
    * Carga los registros más recientes de Supabase.
    */
-  public async obtenerLogs(limite: number = 300): Promise<RegistroLog[]> {
+  public async obtenerLogs(limite: number = 300): Promise<{ logs: RegistroLog[]; error?: string }> {
     try {
       const { data, error } = await this.cliente
         .from('logs_sistema')
@@ -48,13 +75,14 @@ export class ServicioSupabaseLogs {
 
       if (error) {
         console.error('[ServicioSupabaseLogs] Error al consultar logs:', error.message);
-        return [];
+        return { logs: [], error: error.message };
       }
 
-      return (data as RegistroLog[]) || [];
+      return { logs: (data as RegistroLog[]) || [] };
     } catch (err: unknown) {
+      const mensaje = err instanceof Error ? err.message : 'Excepción al consultar logs';
       console.error('[ServicioSupabaseLogs] Excepción al consultar logs:', err);
-      return [];
+      return { logs: [], error: mensaje };
     }
   }
 
@@ -102,20 +130,26 @@ export class ServicioSupabaseLogs {
     nivel: 'CRASH' | 'ERROR' | 'WARN' | 'INFO',
     mensaje: string,
     detalles: Record<string, unknown> = {}
-  ): Promise<boolean> {
+  ): Promise<{ exito: boolean; registro: RegistroLog; error?: string }> {
+    const registro: RegistroLog = {
+      id: `test-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      nivel,
+      origen: 'visor-logs-admin',
+      dispositivo_id: 'consola-admin',
+      mensaje,
+      detalles,
+      creado_en: new Date().toISOString(),
+    };
+
     try {
-      const { error } = await this.cliente.from('logs_sistema').insert({
-        id: `test-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        nivel,
-        origen: 'visor-logs-admin',
-        dispositivo_id: 'consola-admin',
-        mensaje,
-        detalles,
-        creado_en: new Date().toISOString(),
-      });
-      return !error;
-    } catch {
-      return false;
+      const { error } = await this.cliente.from('logs_sistema').insert(registro);
+      if (error) {
+        return { exito: false, registro, error: error.message };
+      }
+      return { exito: true, registro };
+    } catch (err: unknown) {
+      const errMsj = err instanceof Error ? err.message : 'Error desconocido al insertar';
+      return { exito: false, registro, error: errMsj };
     }
   }
 

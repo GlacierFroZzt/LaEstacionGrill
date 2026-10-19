@@ -1234,4 +1234,11 @@
   4. **Monorepo y Despliegue:**
      - Se añadieron scripts en la raíz `package.json`: `"dev:logs"` y `"build:logs"`.
      - Se añadió `visor-logs/vercel.json` para despliegue independiente con un clic en Vercel.
+  5. **Diagnóstico Visual y Asistente Interactivo de Base de Datos:**
+     - Si la tabla `public.logs_sistema` aún no ha sido creada en Supabase (error `PGRST205`), el visor lo detecta proactivamente (`verificarEstadoTabla()`) y despliega un banner de asistencia con:
+       - Botón de 1-clic para copiar el script SQL al portapapeles.
+       - Modal explicativo con el código SQL y enlace directo al SQL Editor de Supabase.
+       - Botón de reintento en caliente.
+     - En `handleGenerarLogPrueba`, si la tabla no está creada aún en la nube, el evento simulado se inyecta en el estado local de la UI para que el usuario pueda verificar los filtros, alarmas sonoras de crash y el visor de stack trace de forma inmediata.
+
 

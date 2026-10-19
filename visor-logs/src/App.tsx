@@ -24,6 +24,46 @@ import {
 import { servicioSupabaseLogs } from './servicioSupabaseLogs';
 import type { RegistroLog, NivelLog, FiltroLogs, EstadisticasLogs } from './types';
 
+const SQL_ESQUEMA_LOGS = `-- TAQUERÍA KM 243 / LA ESTACIÓN GRILL
+-- TABLA DE REGISTROS DEL SISTEMA, AUDITORÍA Y CRASH REPORTING
+-- Ejecuta este script en el SQL Editor de Supabase
+CREATE TABLE IF NOT EXISTS public.logs_sistema (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    nivel TEXT NOT NULL CHECK (nivel IN ('CRASH', 'ERROR', 'WARN', 'INFO')),
+    origen TEXT NOT NULL DEFAULT 'frontend-pos',
+    dispositivo_id TEXT NOT NULL DEFAULT 'desconocido',
+    mensaje TEXT NOT NULL,
+    detalles JSONB NOT NULL DEFAULT '{}'::jsonb,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Índices optimizados
+CREATE INDEX IF NOT EXISTS idx_logs_sistema_nivel ON public.logs_sistema (nivel);
+CREATE INDEX IF NOT EXISTS idx_logs_sistema_creado_en ON public.logs_sistema (creado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_logs_sistema_dispositivo ON public.logs_sistema (dispositivo_id);
+
+-- RLS y Políticas de acceso
+ALTER TABLE public.logs_sistema ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acceso completo anon logs_sistema" ON public.logs_sistema;
+CREATE POLICY "Acceso completo anon logs_sistema"
+ON public.logs_sistema
+FOR ALL
+TO anon
+USING (true)
+WITH CHECK (true);
+
+-- Habilitar suscripción en tiempo real
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' 
+        AND tablename = 'logs_sistema'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.logs_sistema;
+    END IF;
+END $$;`;
+
 export const App: React.FC = () => {
   // Estado de Autenticación Privada
   const [autenticado, setAutenticado] = useState<boolean>(() => {
@@ -38,6 +78,8 @@ export const App: React.FC = () => {
   const [conectadoRealtime, setConectadoRealtime] = useState<boolean>(false);
   const [feedPausado, setFeedPausado] = useState<boolean>(false);
   const [sonidoHabilitado, setSonidoHabilitado] = useState<boolean>(true);
+  const [tablaNoExiste, setTablaNoExiste] = useState<boolean>(false);
+  const [mostrarSqlModal, setMostrarSqlModal] = useState<boolean>(false);
 
   // Filtros
   const [filtro, setFiltro] = useState<FiltroLogs>({
@@ -78,11 +120,18 @@ export const App: React.FC = () => {
     }
   }, [sonidoHabilitado]);
 
-  // Cargar datos iniciales
+  // Cargar datos iniciales con verificación de tabla
   const cargarLogs = useCallback(async (): Promise<void> => {
     setCargando(true);
-    const datos = await servicioSupabaseLogs.obtenerLogs(400);
-    setLogs(datos);
+    const estadoTabla = await servicioSupabaseLogs.verificarEstadoTabla();
+    if (!estadoTabla.tablaExiste) {
+      setTablaNoExiste(true);
+      setCargando(false);
+      return;
+    }
+    setTablaNoExiste(false);
+    const resultado = await servicioSupabaseLogs.obtenerLogs(400);
+    setLogs(resultado.logs);
     setCargando(false);
   }, []);
 
@@ -251,12 +300,23 @@ export const App: React.FC = () => {
     else if (tipo === 'ERROR') msg = 'Error simulado: pérdida de conexión con impresora térmica';
     else if (tipo === 'WARN') msg = 'Advertencia simulada: latencia inusual en sincronización';
 
-    await servicioSupabaseLogs.insertarLogPrueba(tipo, msg, {
+    const resp = await servicioSupabaseLogs.insertarLogPrueba(tipo, msg, {
       simulado: true,
       usuarioAdmin: 'dueño-sistema',
-      navegador: navigator.userAgent,
+      navegador: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A',
+      modoPrueba: true,
     });
-    cargarLogs();
+
+    if (resp.exito) {
+      cargarLogs();
+    } else {
+      // Si la tabla no está creada aún en Supabase, agregamos el log localmente para permitir
+      // que el usuario pruebe todos los filtros, modal de stack trace y reproductor de audio de inmediato
+      setLogs((prev) => [resp.registro, ...prev]);
+      if (tipo === 'CRASH') {
+        reproducirAlertaCrash();
+      }
+    }
   };
 
   // Purgar todos los logs
@@ -445,6 +505,66 @@ export const App: React.FC = () => {
 
       {/* Contenedor Principal */}
       <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
+        {/* Alerta de Tabla no Creada en Supabase */}
+        {tablaNoExiste && (
+          <div className="p-4 sm:p-5 rounded-2xl bg-amber-950/40 border border-amber-600/50 shadow-xl space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-amber-300">
+                    La tabla &apos;logs_sistema&apos; aún no ha sido creada en Supabase
+                  </h3>
+                  <p className="text-xs text-stone-300 mt-1 leading-relaxed">
+                    Por esta razón el visor aún no recibe los eventos ni errores en vivo desde los celulares y tablets del restaurante. Para activarla, copia el script SQL y ejecútalo con un solo clic en el <strong className="text-amber-200">SQL Editor</strong> de Supabase.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={cargarLogs}
+                disabled={cargando}
+                title="Reintentar verificación"
+                className="shrink-0 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs text-stone-200 border border-stone-700 flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${cargando ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Reintentar</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-900/40">
+              <button
+                type="button"
+                onClick={() => handleCopiarTexto(SQL_ESQUEMA_LOGS)}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md shadow-amber-950/40"
+              >
+                {copiado ? <Check className="w-3.5 h-3.5 text-stone-950" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiado ? '¡Copiado al portapapeles!' : 'Copiar Script SQL'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMostrarSqlModal(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs font-medium border border-stone-700 flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <FileCode className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ver Código SQL Completo</span>
+              </button>
+
+              <a
+                href="https://supabase.com/dashboard/project/idgyotujnoavliaqtuck/sql"
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 text-xs font-medium border border-amber-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <span>Abrir SQL Editor de Supabase ↗</span>
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Fila de Tarjetas KPI */}
         <section className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           {/* Total Logs */}
@@ -908,6 +1028,85 @@ export const App: React.FC = () => {
               >
                 Cerrar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Asistente SQL para Supabase */}
+      {mostrarSqlModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-2xl bg-stone-900 border border-stone-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 sm:p-5 border-b border-stone-800 flex items-center justify-between bg-stone-950/60">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                  <FileCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Script SQL de Supabase</h3>
+                  <p className="text-[11px] text-stone-400">
+                    Copia y ejecuta este código en el SQL Editor de tu proyecto
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMostrarSqlModal(false)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 custom-scrollbar">
+              <ol className="text-xs text-stone-300 space-y-1 list-decimal list-inside bg-stone-950/60 p-3 rounded-xl border border-stone-800/80">
+                <li>
+                  Haz clic en el botón <strong className="text-amber-400">&quot;Copiar Código SQL&quot;</strong> abajo.
+                </li>
+                <li>
+                  Abre tu proyecto de Supabase en el menú lateral:{' '}
+                  <strong className="text-amber-300">SQL Editor</strong>.
+                </li>
+                <li>Pega el código en el editor y presiona el botón verde <strong>Run</strong>.</li>
+                <li>
+                  Regresa aquí y presiona <strong>&quot;Reintentar Verificación&quot;</strong>.
+                </li>
+              </ol>
+
+              <div className="relative">
+                <pre className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 text-amber-200/90 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-72 custom-scrollbar">
+                  {SQL_ESQUEMA_LOGS}
+                </pre>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-stone-800 bg-stone-950/80 flex items-center justify-between gap-3">
+              <a
+                href="https://supabase.com/dashboard/project/idgyotujnoavliaqtuck/sql"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
+              >
+                <span>Abrir Supabase Dashboard ↗</span>
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopiarTexto(SQL_ESQUEMA_LOGS)}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-md"
+                >
+                  {copiado ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiado ? '¡Copiado!' : 'Copiar Código SQL'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSqlModal(false)}
+                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
         </div>
