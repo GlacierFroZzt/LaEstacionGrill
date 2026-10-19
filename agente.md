@@ -1262,4 +1262,24 @@
   - Compilación nativa completada con Gradle 9.5: APK generado y disponible en [`d:/TaqueriaKm243/LaEstacionGrill-v1.2.3.apk`](file:///d:/TaqueriaKm243/LaEstacionGrill-v1.2.3.apk) (7.2 MB).
 
 
+## 20. Creación de APK Dedicado de la Terminal de Auditoría y Crashes para el Dueño (`TerminalAdmin-v1.0.0.apk`)
+- **Aclaración y Requerimiento del Usuario:**
+  - *"Esa es la app del cliente, yo quiero la terminal en mi celular"*.
+  - El usuario aclaró que la app de mesas y comandas es para las meseras/clientes, y que requería la aplicación de la **Terminal Privada de Auditoría y Monitoreo de Logs (`visor-logs`) empaquetada como su propia app en su celular**.
+- **Arquitectura de Sabor de Producto en Gradle (`productFlavors`):**
+  1. En `app/build.gradle.kts` se añadieron dos sabores independientes con IDs de paquete diferenciados para permitir tener ambas apps en el mismo dispositivo sin conflicto:
+     - **Sabor Restaurante:** `applicationId = "com.laestacion.grill"`, nombre `"La Estación Grill"`.
+     - **Sabor Terminal:** `applicationId = "com.laestacion.terminal"`, nombre `"Terminal Auditoría"`.
+  2. **Activos Dedicados para la Terminal:**
+     - Se crearon los assets en `app/src/terminal/assets/web/` conteniendo la aplicación completa de `visor-logs` (pantalla de PIN confidencial, dashboard en vivo, panel de KPIs, filtros y modal de errores).
+  3. **Notificaciones Nativas de Alta Prioridad:**
+     - En `visor-logs/src/App.tsx`, al recibir en tiempo real un log de nivel `CRASH` o `ERROR`, se conecta con `AndroidNotificationBridge` para disparar una notificación flotante (*heads-up*), vibración y sonido de emergencia de forma nativa en el celular del dueño.
+  4. **Auto-Actualización OTA al Entrar a la Terminal:**
+     - En `visor-logs/src/main.tsx` y `MainActivity.kt`: al abrir o reanudar la app, consulta `terminal-version.json` y actualiza silenciosamente desde `terminal-bundle.zip` en Supabase Storage sin necesidad de reinstalar APKs.
+- **Compilación Exitosa:**
+  - Script automatizado: `frontend/compilar_terminal_apk.ps1` (`pnpm run build:apk:terminal`).
+  - APK generado: [`d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk`](file:///d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk) (7.38 MB).
+
+
+
 

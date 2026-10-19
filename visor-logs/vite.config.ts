@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 
 // Configuración de Vite para el Monitor Privado de Logs
 export default defineConfig({
+  base: process.env.VERCEL ? '/' : './',
   plugins: [react(), tailwindcss()],
   server: {
     port: 5174,

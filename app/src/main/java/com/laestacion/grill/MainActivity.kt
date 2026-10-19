@@ -199,8 +199,11 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun descargarYActualizar(urlZip: String?) {
             val urlFinal = if (urlZip.isNullOrBlank()) {
-                // Endpoint remoto en la nube oficial de Supabase Storage
-                "https://idgyotujnoavliaqtuck.supabase.co/storage/v1/object/public/actualizaciones/web-bundle.zip"
+                if (packageName.contains("terminal")) {
+                    "https://idgyotujnoavliaqtuck.supabase.co/storage/v1/object/public/actualizaciones/terminal-bundle.zip"
+                } else {
+                    "https://idgyotujnoavliaqtuck.supabase.co/storage/v1/object/public/actualizaciones/web-bundle.zip"
+                }
             } else {
                 urlZip
             }

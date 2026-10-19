@@ -145,8 +145,29 @@ export const App: React.FC = () => {
         if (!feedPausado) {
           setLogs((prev) => [nuevoLog, ...prev]);
         }
-        if (nuevoLog.nivel === 'CRASH') {
+        if (nuevoLog.nivel === 'CRASH' || nuevoLog.nivel === 'ERROR') {
           reproducirAlertaCrash();
+
+          // Emitir notificación nativa de alta prioridad si se ejecuta en Android
+          if (typeof window !== 'undefined') {
+            const puente = (window as unknown as {
+              AndroidNotificationBridge?: {
+                emitirNotificacion: (t: string, m: string, n: string) => void;
+              };
+            }).AndroidNotificationBridge;
+
+            if (puente) {
+              const titulo =
+                nuevoLog.nivel === 'CRASH'
+                  ? '💥 CRASH EN RESTAURANTE'
+                  : '⚠️ ERROR EN TERMINAL';
+              puente.emitirNotificacion(
+                titulo,
+                `${nuevoLog.dispositivo_id}: ${nuevoLog.mensaje}`,
+                nuevoLog.nivel
+              );
+            }
+          }
         }
       },
       (conectado) => {
@@ -313,8 +334,22 @@ export const App: React.FC = () => {
       // Si la tabla no está creada aún en Supabase, agregamos el log localmente para permitir
       // que el usuario pruebe todos los filtros, modal de stack trace y reproductor de audio de inmediato
       setLogs((prev) => [resp.registro, ...prev]);
-      if (tipo === 'CRASH') {
+      if (tipo === 'CRASH' || tipo === 'ERROR') {
         reproducirAlertaCrash();
+        if (typeof window !== 'undefined') {
+          const puente = (window as unknown as {
+            AndroidNotificationBridge?: {
+              emitirNotificacion: (t: string, m: string, n: string) => void;
+            };
+          }).AndroidNotificationBridge;
+          if (puente) {
+            puente.emitirNotificacion(
+              tipo === 'CRASH' ? '💥 PRUEBA DE CRASH' : '⚠️ PRUEBA DE ERROR',
+              msg,
+              tipo
+            );
+          }
+        }
       }
     }
   };

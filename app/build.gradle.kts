@@ -9,13 +9,30 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.laestacion.grill"
         minSdk = 24
         targetSdk = 37
         versionCode = 5
         versionName = "1.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    flavorDimensions += "tipo"
+    productFlavors {
+        create("restaurante") {
+            dimension = "tipo"
+            applicationId = "com.laestacion.grill"
+            versionCode = 5
+            versionName = "1.2.3"
+            manifestPlaceholders["appName"] = "La Estación Grill"
+        }
+        create("terminal") {
+            dimension = "tipo"
+            applicationId = "com.laestacion.terminal"
+            versionCode = 1
+            versionName = "1.0.0"
+            manifestPlaceholders["appName"] = "Terminal Auditoría"
+        }
     }
 
     buildTypes {
