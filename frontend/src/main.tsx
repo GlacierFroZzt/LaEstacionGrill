@@ -4,7 +4,15 @@ import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { servicioActualizaciones } from './services/servicioActualizaciones'
-import './services/servicioTelemetria'
+import { servicioTelemetria } from './services/servicioTelemetria'
+
+// Registrar inicio de la terminal en el sistema de telemetría y auditoría
+if (typeof window !== 'undefined') {
+  servicioTelemetria.registrarInfo('Terminal operativa iniciada', {
+    pantalla: `${window.innerWidth}x${window.innerHeight}`,
+    orientacion: window.innerWidth > window.innerHeight ? 'horizontal' : 'vertical',
+  });
+}
 
 // Exponer y disparar verificación automática inmediata en segundo plano
 declare global {

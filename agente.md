@@ -1242,3 +1242,24 @@
      - En `handleGenerarLogPrueba`, si la tabla no está creada aún en la nube, el evento simulado se inyecta en el estado local de la UI para que el usuario pueda verificar los filtros, alarmas sonoras de crash y el visor de stack trace de forma inmediata.
 
 
+## 19. Generación de APK para Celular con Notificaciones de Alta Prioridad y Auto-Actualización OTA (v1.2.3)
+- **Requerimiento del Usuario:**
+  - *"Generame un apk de la terminal para tenerlo en mi celular, que me envie notificaciones de alta prioridad, que igual se actualice automaticamente al entrar a la app"*.
+- **Implementación de Notificaciones Nativas de Alta Prioridad:**
+  1. **Permisos en [`AndroidManifest.xml`](file:///d:/TaqueriaKm243/app/src/main/AndroidManifest.xml):**
+     - Añadidos `android.permission.POST_NOTIFICATIONS` y `android.permission.VIBRATE`.
+  2. **Canal de Notificaciones y Puente JavaScript en [`MainActivity.kt`](file:///d:/TaqueriaKm243/app/src/main/java/com/laestacion/grill/MainActivity.kt):**
+     - Configurado canal `canal_taqueria_alertas` con `NotificationManager.IMPORTANCE_HIGH`, luces LED de advertencia, vibración persistente y sonido de sistema.
+     - Solicitud dinámica de permisos en tiempo de ejecución para Android 13+ (API 33+).
+     - Expuesto `AndroidNotificationBridge` al WebView con `emitirNotificacion(titulo, mensaje, nivel)` para generar notificaciones emergentes tipo *heads-up*.
+  3. **Alertas Cruzadas entre Terminales en Tiempo Real:**
+     - En `servicioSupabase.ts`, se configuró la escucha de eventos `INSERT` en la tabla `logs_sistema`. Si cualquier mesera o la cocina sufre un error o crash en otra terminal (`dispositivo_id !== this.idDispositivo`), el teléfono del dueño recibe inmediatamente la notificación nativa de alta prioridad en pantalla.
+- **Auto-Actualización Inmediata al Entrar y Reanudar:**
+  - En `MainActivity.kt`: tanto en el arranque (`onPageFinished`) como en `onResume()`, se dispara automáticamente `window.servicioActualizacionesAuto()`. Al desbloquear o entrar a la app, esta consulta silenciosamente Supabase Storage (`version.json`) y recarga el bundle sin requerir nueva instalación de APK.
+- **Compilación de Producción:**
+  - Actualizado `versionCode = 5` y `versionName = "1.2.3"` en `app/build.gradle.kts` y `version.json`.
+  - Despliegue OTA exitoso a Supabase Storage (`actualizaciones/web-bundle.zip` y `actualizaciones/version.json`).
+  - Compilación nativa completada con Gradle 9.5: APK generado y disponible en [`d:/TaqueriaKm243/LaEstacionGrill-v1.2.3.apk`](file:///d:/TaqueriaKm243/LaEstacionGrill-v1.2.3.apk) (7.2 MB).
+
+
+

@@ -1,11 +1,7 @@
 {
-  "version": "1.2.1",
+  "version": "1.2.3",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792332000000,
+  "timestamp": 1792340000000,
   "fecha": "19 de octubre de 2026",
-  "notas": "Reforzamiento de seguridad: eliminación total de contraseñas, PINs y pistas visibles en la interfaz de usuario."
+  "notas": "Soporte oficial de notificaciones nativas de alta prioridad en Android y auto-actualizacion al entrar."
 }
-
-
-
-

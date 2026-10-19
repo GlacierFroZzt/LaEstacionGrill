@@ -121,6 +121,20 @@ export class ServicioTelemetria {
       // Guardar en caché circular local para auditoría en el dispositivo
       this.guardarEnHistorialLocal(registro);
 
+      // Si estamos en la app nativa de Android, emitir notificación de alta prioridad
+      if (typeof window !== 'undefined' && (nivel === 'CRASH' || nivel === 'ERROR')) {
+        const puente = (window as unknown as {
+          AndroidNotificationBridge?: {
+            emitirNotificacion: (t: string, m: string, n: string) => void;
+          };
+        }).AndroidNotificationBridge;
+
+        if (puente) {
+          const titulo = nivel === 'CRASH' ? '💥 ALERTA CRÍTICA: Fallo en Terminal' : '⚠️ AVISO: Error en Terminal';
+          puente.emitirNotificacion(titulo, mensaje, nivel);
+        }
+      }
+
       // Intentar enviar a Supabase inmediatamente
       const enviado = await this.enviarASupabase(registro);
       if (!enviado) {

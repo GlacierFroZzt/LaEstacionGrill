@@ -31,8 +31,23 @@ import java.net.URL
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import kotlin.concurrent.thread
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import android.Manifest
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        const val CANAL_ID = "canal_taqueria_alertas"
+        const val CODIGO_PERMISO_NOTIF = 101
+    }
 
     private lateinit var webView: WebView
     private lateinit var dirWebLive: File
@@ -61,6 +76,10 @@ class MainActivity : AppCompatActivity() {
 
         // Configuración inmersiva de pantalla completa para tablets y celulares
         configurarPantallaCompletaInmersiva()
+
+        // Configuración del canal de notificaciones de alta prioridad para alertas del restaurante
+        configurarCanalNotificaciones()
+        solicitarPermisoNotificaciones()
 
         // Cargador híbrido de assets: Si existe una versión web actualizada OTA en disco interno,
         // se sirve prioritariamente; si no, se sirven los assets de fábrica preempaquetados en el APK.
@@ -102,6 +121,8 @@ class MainActivity : AppCompatActivity() {
 
             // Exponer puente nativo para gestión de actualizaciones OTA desde la interfaz web
             addJavascriptInterface(AndroidOtaBridge(), "AndroidOtaBridge")
+            // Exponer puente nativo de notificaciones de alta prioridad para avisos y crasheos
+            addJavascriptInterface(AndroidNotificationBridge(), "AndroidNotificationBridge")
 
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(
@@ -300,9 +321,115 @@ class MainActivity : AppCompatActivity() {
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 
+    private fun configurarCanalNotificaciones() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val audioAttributes = AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .build()
+
+            val sonidoUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+            val canal = NotificationChannel(
+                CANAL_ID,
+                "Alertas de Alta Prioridad - La Estación Grill",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notificaciones críticas de crasheos, errores y eventos importantes del restaurante"
+                enableLights(true)
+                lightColor = Color.parseColor("#f59e0b")
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 350, 150, 350, 150, 450)
+                setSound(sonidoUri, audioAttributes)
+            }
+
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(canal)
+        }
+    }
+
+    private fun solicitarPermisoNotificaciones() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), CODIGO_PERMISO_NOTIF)
+            }
+        }
+    }
+
+    fun mostrarNotificacionNativa(titulo: String, mensaje: String, nivel: String) {
+        try {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val builder = NotificationCompat.Builder(this, CANAL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(titulo)
+                .setContentText(mensaje)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(mensaje))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_EVENT)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setVibrate(longArrayOf(0, 350, 150, 350, 150, 450))
+
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val idNotif = (System.currentTimeMillis() % 100000).toInt()
+            notificationManager.notify(idNotif, builder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Puente para enviar notificaciones nativas de alta prioridad desde la app web
+     */
+    inner class AndroidNotificationBridge {
+        @JavascriptInterface
+        fun emitirNotificacion(titulo: String, mensaje: String, nivel: String) {
+            runOnUiThread {
+                mostrarNotificacionNativa(titulo, mensaje, nivel)
+            }
+        }
+
+        @JavascriptInterface
+        fun tienePermisoNotificaciones(): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    this@MainActivity,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        }
+
+        @JavascriptInterface
+        fun solicitarPermiso() {
+            runOnUiThread {
+                solicitarPermisoNotificaciones()
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         configurarPantallaCompletaInmersiva()
+        // Disparar comprobación de actualización automática cada vez que se entra o reanuda la app
+        if (this::webView.isInitialized) {
+            webView.postDelayed({
+                webView.evaluateJavascript(
+                    "(function() { if (window.servicioActualizacionesAuto) { window.servicioActualizacionesAuto(); } })();",
+                    null
+                )
+            }, 500)
+        }
     }
 
     @Deprecated("Deprecated in Java")

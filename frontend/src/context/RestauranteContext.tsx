@@ -19,6 +19,7 @@ import type {
 import { RepositorioStorage } from '../services/repositorioStorage';
 import { servicioSincronizacion } from '../services/servicioSincronizacion';
 import { servicioSupabase } from '../services/servicioSupabase';
+import { servicioTelemetria } from '../services/servicioTelemetria';
 import { reproducirCampanaCocina } from '../utils/sonidoCocina';
 import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
 
@@ -929,6 +930,13 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       // Persistir y sincronizar en Supabase (o cola offline)
       servicioSupabase.guardarMesas(nuevasMesas).catch(console.error);
       servicioSupabase.guardarCuentas(nuevasCuentas).catch(console.error);
+
+      // Registrar auditoría operativa en telemetría
+      servicioTelemetria.registrarInfo(`Mesa abierta: ${mesa.nombre}`, {
+        mesaId: mesa.id,
+        numeroMesa: mesa.numero,
+        mesero: mesero ?? meseroActual,
+      });
     },
     [mesas, cuentasActivas, meseroActual]
   );
@@ -1293,6 +1301,14 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       servicioSupabase.guardarPedidoCocina(nuevoPedido).catch(console.error);
       servicioSupabase.guardarCuentas(cuentasActualizadas).catch(console.error);
 
+      // Registrar auditoría operativa en telemetría
+      servicioTelemetria.registrarInfo(`Comanda enviada a cocina: ${nuevoPedido.nombreMesa}`, {
+        pedidoId: nuevoPedido.id,
+        mesaId: mesa.id,
+        itemsCount: itemsAEnviar.length,
+        numeroRonda,
+      });
+
       const totalPiezas = itemsAEnviar.reduce((acc, it) => acc + it.cantidad, 0);
       return {
         enviadosCount: totalPiezas,
@@ -1514,6 +1530,16 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       servicioSupabase.guardarCuentas(cuentasCopia).catch(console.error);
       servicioSupabase.guardarMesas(mesasCopia).catch(console.error);
       servicioSupabase.guardarCorte(corteActualizado).catch(console.error);
+
+      // Registrar auditoría operativa en telemetría
+      servicioTelemetria.registrarInfo(`Cuenta cobrada: ${cuenta.nombreMesa} ($${totalFinal.toFixed(2)})`, {
+        cuentaId: cuenta.id,
+        mesaId: mesa.id,
+        total: totalFinal,
+        metodoPago,
+        propina,
+        cambio,
+      });
 
       return { exito: true, cambio, cuentaCerrada };
     },

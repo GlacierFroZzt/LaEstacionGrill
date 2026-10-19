@@ -257,6 +257,42 @@ class ServicioSupabase {
             this.notificarListeners('CORTE_REMOTO_ACTUALIZADO', payload.new);
           }
         )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'logs_sistema' },
+          (payload) => {
+            try {
+              const nuevo = payload.new as { nivel?: string; mensaje?: string; dispositivo_id?: string };
+              if (
+                nuevo &&
+                (nuevo.nivel === 'CRASH' || nuevo.nivel === 'ERROR') &&
+                nuevo.dispositivo_id !== this.idDispositivo
+              ) {
+                if (typeof window !== 'undefined') {
+                  const puente = (window as unknown as {
+                    AndroidNotificationBridge?: {
+                      emitirNotificacion: (t: string, m: string, n: string) => void;
+                    };
+                  }).AndroidNotificationBridge;
+
+                  if (puente) {
+                    const titulo =
+                      nuevo.nivel === 'CRASH'
+                        ? '💥 ALERTA: Crash en Terminal Restaurante'
+                        : '⚠️ AVISO: Error en Terminal Restaurante';
+                    puente.emitirNotificacion(
+                      titulo,
+                      `${nuevo.dispositivo_id}: ${nuevo.mensaje || ''}`,
+                      nuevo.nivel
+                    );
+                  }
+                }
+              }
+            } catch (err: unknown) {
+              console.error('[ServicioSupabase] Error al notificar log remoto:', err);
+            }
+          }
+        )
         .subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
             console.log(`[ServicioSupabase] Canal Realtime (${nombreCanal}) conectado y suscrito exitosamente.`);

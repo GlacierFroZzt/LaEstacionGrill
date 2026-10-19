@@ -12,8 +12,8 @@ android {
         applicationId = "com.laestacion.grill"
         minSdk = 24
         targetSdk = 37
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 5
+        versionName = "1.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
