@@ -1,0 +1,16 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Tema Base de la Aplicación sin ActionBar -->
+    <style name="Theme.LaEstacionGrill" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Colores rústicos de Carretera Nacional -->
+        <item name="colorPrimary">#ea580c</item>
+        <item name="colorPrimaryVariant">#c2410c</item>
+        <item name="colorOnPrimary">#faf6f0</item>
+        <item name="colorSecondary">#facc15</item>
+        <item name="colorSecondaryVariant">#eab308</item>
+        <item name="colorOnSecondary">#12100e</item>
+        <!-- Barras del sistema oscuras y limpias -->
+        <item name="android:statusBarColor">#12100e</item>
+        <item name="android:navigationBarColor">#12100e</item>
+        <item name="android:windowBackground">#12100e</item>
+    </style>
+</resources>

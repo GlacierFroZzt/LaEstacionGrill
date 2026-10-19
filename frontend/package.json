@@ -1,0 +1,41 @@
+{
+  "name": "la-estacion-grill",
+  "private": true,
+  "version": "1.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "sync:android": "tsc -b && vite build && powershell -Command \"Remove-Item -Recurse -Force ../app/src/main/assets/web/* -ErrorAction SilentlyContinue; Copy-Item -Recurse -Force dist/* ../app/src/main/assets/web/\"",
+    "sync:ios": "tsc -b && vite build && powershell -Command \"Remove-Item -Recurse -Force ../ios/LaEstacionGrill/web/* -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force -Path ../ios/LaEstacionGrill/web; Copy-Item -Recurse -Force dist/* ../ios/LaEstacionGrill/web/\"",
+    "sync:all": "pnpm run sync:android && pnpm run sync:ios",
+    "deploy:supabase": "pnpm run sync:all && powershell -ExecutionPolicy Bypass -File ./empaquetar.ps1 && node subir_a_supabase.js",
+    "deploy:vercel": "pnpm dlx vercel --prod",
+    "build:apk": "powershell -ExecutionPolicy Bypass -File ./compilar_apk.ps1",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "canvas-confetti": "^1.9.4",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.56.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.6.1",
+    "oxlint": "^1.81.0",
+    "postcss": "^8.5.30",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}

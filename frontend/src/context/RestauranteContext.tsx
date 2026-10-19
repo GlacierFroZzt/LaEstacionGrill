@@ -1,0 +1,1927 @@
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type {
+  Mesa,
+  Cuenta,
+  ItemComanda,
+  Producto,
+  EstadoMesa,
+  MetodoPago,
+  CorteCaja,
+  TurnoCerrado,
+  PedidoCocina,
+  EstadoPedidoCocina,
+  VistaPrincipal,
+  MensajeSincronizacion,
+  DesglosePagoMixto,
+  DivisionCuentaInfo,
+  TemaVisual,
+} from '../types';
+import { RepositorioStorage } from '../services/repositorioStorage';
+import { servicioSincronizacion } from '../services/servicioSincronizacion';
+import { servicioSupabase } from '../services/servicioSupabase';
+import { reproducirCampanaCocina } from '../utils/sonidoCocina';
+import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
+
+export type NivelOroLiquido = 'intenso' | 'elegante' | 'sutil' | 'apagado';
+
+export interface ParametrosOroLiquido {
+  readonly velocidad: number;
+  readonly brillo: number;
+  readonly densidadOndas: number;
+  readonly duracionSegundosCss: number;
+  readonly opacidadFondoAmbiental: number;
+}
+
+export const PARAMETROS_NIVEL_ORO: Record<NivelOroLiquido, ParametrosOroLiquido> = {
+  intenso: {
+    velocidad: 1.35,
+    brillo: 1.6,
+    densidadOndas: 1.35,
+    duracionSegundosCss: 3.5,
+    opacidadFondoAmbiental: 0.7,
+  },
+  elegante: {
+    velocidad: 0.9,
+    brillo: 1.25,
+    densidadOndas: 1.05,
+    duracionSegundosCss: 5.0,
+    opacidadFondoAmbiental: 0.45,
+  },
+  sutil: {
+    velocidad: 0.5,
+    brillo: 0.9,
+    densidadOndas: 0.8,
+    duracionSegundosCss: 7.5,
+    opacidadFondoAmbiental: 0.2,
+  },
+  apagado: {
+    velocidad: 0,
+    brillo: 0,
+    densidadOndas: 0,
+    duracionSegundosCss: 0,
+    opacidadFondoAmbiental: 0,
+  },
+};
+
+/**
+ * Determina si un producto o ítem debe enviarse a cocina (KDS).
+ * Las bebidas NO se envían a cocina porque las lleva directamente el mesero,
+ * a menos que sea una bebida que requiera preparación (requierePreparacion === true).
+ */
+export const esItemParaCocina = (
+  item: Pick<ItemComanda, 'categoria' | 'requierePreparacion'>
+): boolean => {
+  if (item.categoria === 'bebidas') {
+    return item.requierePreparacion === true;
+  }
+  return item.requierePreparacion !== false;
+};
+
+interface RestauranteContextType {
+  mesas: Mesa[];
+  mesaSeleccionada: Mesa | null;
+  cuentaActiva: Cuenta | null;
+  corteActual: CorteCaja;
+  cuentasCerradas: Cuenta[];
+  historialTurnos: TurnoCerrado[];
+  pedidosCocina: PedidoCocina[];
+  vistaActual: VistaPrincipal;
+  estaEnLinea: boolean;
+  dispositivosConectados: number;
+  ticketImpresion: { cuenta: Cuenta; tipo: 'cocina' | 'cliente' } | null;
+  meseroActual: string;
+  tema: TemaVisual;
+  nivelOroLiquido: NivelOroLiquido;
+  parametrosOro: ParametrosOroLiquido;
+  setNivelOroLiquido: (nivel: NivelOroLiquido) => void;
+  alternarTema: () => void;
+  setVistaActual: (vista: VistaPrincipal) => void;
+  setMeseroActual: (nombre: string) => void;
+  seleccionarMesa: (mesa: Mesa | null) => void;
+  abrirMesa: (mesaId: string, mesero?: string) => void;
+  cambiarEstadoMesa: (mesaId: string, nuevoEstado: EstadoMesa) => void;
+  agregarProductoAComanda: (
+    mesaId: string,
+    producto: Producto,
+    cantidad: number,
+    notas: string,
+    modificadores: string[]
+  ) => void;
+  modificarCantidadItem: (mesaId: string, itemId: string, delta: number) => void;
+  eliminarItemComanda: (mesaId: string, itemId: string) => void;
+  solicitarCuenta: (mesaId: string) => void;
+  cerrarYCobrarCuenta: (
+    mesaId: string,
+    metodoPago: MetodoPago,
+    propina: number,
+    montoRecibido?: number,
+    desgloseMixto?: DesglosePagoMixto,
+    divisionCuenta?: DivisionCuentaInfo
+  ) => { exito: boolean; cambio: number; cuentaCerrada?: Cuenta };
+  liberarMesaManual: (mesaId: string) => void;
+  agregarMesa: (capacidad?: number) => Mesa;
+  eliminarMesa: (mesaId?: string) => { exito: boolean; mensaje: string };
+  agregarDomicilio: () => Mesa;
+  eliminarDomicilio: (mesaId?: string) => { exito: boolean; mensaje: string };
+  imprimirTicket: (tipo: 'cocina' | 'cliente', cuentaEspecifica?: Cuenta) => void;
+  cerrarTicketImpresion: () => void;
+  reiniciarTurnoActual: (pin: string) => boolean;
+  cargarHistorialTurnos: () => Promise<void>;
+  enviarComandaACocina: (
+    mesaId: string,
+    forzarReenvioCompleto?: boolean
+  ) => { enviadosCount: number; exito: boolean; mensaje: string };
+  cambiarEstadoPedidoCocina: (pedidoId: string, nuevoEstado: EstadoPedidoCocina) => void;
+  alternarItemCompletadoCocina: (pedidoId: string, itemId: string) => void;
+}
+
+const RestauranteContext = createContext<RestauranteContextType | undefined>(undefined);
+
+export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [mesas, setMesas] = useState<Mesa[]>(() => RepositorioStorage.obtenerMesas());
+  const [cuentasActivas, setCuentasActivas] = useState<Record<string, Cuenta>>(() =>
+    RepositorioStorage.obtenerCuentasActivas()
+  );
+  const [cuentasCerradas, setCuentasCerradas] = useState<Cuenta[]>(() =>
+    RepositorioStorage.obtenerCuentasCerradas()
+  );
+  const [corteActual, setCorteActual] = useState<CorteCaja>(() =>
+    RepositorioStorage.obtenerCorteActual()
+  );
+  const [historialTurnos, setHistorialTurnos] = useState<TurnoCerrado[]>(() =>
+    RepositorioStorage.obtenerHistorialTurnos()
+  );
+  const [pedidosCocina, setPedidosCocina] = useState<PedidoCocina[]>(() =>
+    RepositorioStorage.obtenerPedidosCocina()
+  );
+  const [vistaActual, setVistaActual] = useState<VistaPrincipal>('mesas');
+  const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState<string | null>(null);
+  const [estaEnLinea, setEstaEnLinea] = useState<boolean>(() => servicioSupabase.estaConectado());
+  const [dispositivosConectados, setDispositivosConectados] = useState<number>(() =>
+    servicioSincronizacion.totalDispositivos()
+  );
+  const [ticketImpresion, setTicketImpresion] = useState<{
+    cuenta: Cuenta;
+    tipo: 'cocina' | 'cliente';
+  } | null>(null);
+  const [meseroActual, setMeseroActual] = useState<string>('Beto (Mesero)');
+  const [tema, setTema] = useState<TemaVisual>(() => RepositorioStorage.obtenerTema());
+
+  // Control de modificaciones recientes en cocina para evitar que ecos de Realtime o el latido
+  // reviertan clics rápidos del cocinero (protección de condiciones de carrera)
+  const ultimasModificacionesCocinaRef = useRef<Map<string, number>>(new Map());
+  const timersGuardadoCocinaRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const [nivelOroLiquido, setNivelOroLiquidoEstado] = useState<NivelOroLiquido>(() => {
+    try {
+      const guardado = localStorage.getItem('taqueria_nivel_oro_liquido');
+      if (
+        guardado === 'intenso' ||
+        guardado === 'elegante' ||
+        guardado === 'sutil' ||
+        guardado === 'apagado'
+      ) {
+        return guardado;
+      }
+    } catch {
+      // Ignorar error de acceso a localStorage en navegadores restrictivos
+    }
+    return 'elegante';
+  });
+
+  const setNivelOroLiquido = useCallback((nivel: NivelOroLiquido): void => {
+    setNivelOroLiquidoEstado(nivel);
+    try {
+      localStorage.setItem('taqueria_nivel_oro_liquido', nivel);
+    } catch {
+      // Ignorar error de guardado
+    }
+  }, []);
+
+  const parametrosOro = useMemo<ParametrosOroLiquido>(() => {
+    return PARAMETROS_NIVEL_ORO[nivelOroLiquido];
+  }, [nivelOroLiquido]);
+
+  // Sincronizar velocidad CSS y atributo de dataset global en el documento HTML
+  useEffect(() => {
+    document.documentElement.dataset.nivelOro = nivelOroLiquido;
+    document.documentElement.style.setProperty(
+      '--duracion-flujo-oro',
+      parametrosOro.duracionSegundosCss > 0 ? `${parametrosOro.duracionSegundosCss}s` : '0s'
+    );
+  }, [nivelOroLiquido, parametrosOro.duracionSegundosCss]);
+
+  const cargarHistorialTurnos = useCallback(async (): Promise<void> => {
+    const locales = RepositorioStorage.obtenerHistorialTurnos();
+    try {
+      if (servicioSupabase.tieneCredenciales() && navigator.onLine) {
+        const remotos = await servicioSupabase.obtenerHistorialCortes();
+        if (remotos && remotos.length > 0) {
+          const mapa = new Map<string, TurnoCerrado>();
+          for (const t of locales) mapa.set(t.id, t);
+          for (const t of remotos) {
+            if (!mapa.has(t.id)) {
+              mapa.set(t.id, t);
+            }
+          }
+          const combinados = Array.from(mapa.values()).sort(
+            (a, b) => new Date(b.fechaApertura).getTime() - new Date(a.fechaApertura).getTime()
+          );
+          setHistorialTurnos(combinados);
+          RepositorioStorage.guardarHistorialTurnos(combinados);
+          return;
+        }
+      }
+      setHistorialTurnos(locales);
+    } catch (err: unknown) {
+      console.warn('[RestauranteContext.cargarHistorialTurnos] Error al cargar historial remoto:', err);
+      setHistorialTurnos(locales);
+    }
+  }, []);
+
+  const alternarTema = useCallback((): void => {
+    setTema((prev) => {
+      const nuevo = prev === 'oscuro' ? 'claro' : 'oscuro';
+      RepositorioStorage.guardarTema(nuevo);
+      return nuevo;
+    });
+  }, []);
+
+  // Sincronización de clase de tema en el elemento raíz del HTML
+  useEffect(() => {
+    const root = document.documentElement;
+    if (tema === 'claro') {
+      root.classList.add('tema-claro');
+      root.classList.remove('tema-oscuro', 'dark');
+    } else {
+      root.classList.add('tema-oscuro', 'dark');
+      root.classList.remove('tema-claro');
+    }
+  }, [tema]);
+
+  // Sincronización completa con el servidor remoto (PostgreSQL en Supabase)
+  const sincronizarConServidorRemoto = useCallback(async (): Promise<void> => {
+    if (!servicioSupabase.tieneCredenciales()) return;
+    try {
+      const estadoRemoto = await servicioSupabase.obtenerEstadoRemoto();
+      if (!estadoRemoto) return;
+
+      const cuentasRemotas = estadoRemoto.cuentasActivas ?? {};
+      const cuentasActivasIds = new Set(Object.keys(cuentasRemotas));
+
+      let saneadas: Mesa[] = [];
+      if (estadoRemoto.mesas && estadoRemoto.mesas.length > 0) {
+        saneadas = deduplicarYSanearMesas(estadoRemoto.mesas);
+      } else {
+        saneadas = mesas;
+      }
+
+      // Validación de consistencia bidireccional:
+      // Si una mesa aparece ocupada pero no existe cuenta activa válida para ella, se libera de inmediato
+      const mesasCorregidas = saneadas.map((m) => {
+        if (m.estado !== 'libre') {
+          const tieneCuentaValida = Boolean(m.cuentaActivaId && cuentasActivasIds.has(m.cuentaActivaId));
+          if (!tieneCuentaValida) {
+            console.log(`[RestauranteContext] Saneando mesa huérfana sin cuenta activa: ${m.nombre} (ID: ${m.id})`);
+            servicioSupabase.liberarMesaRemota(m.id, m.numero).catch(console.error);
+            return {
+              ...m,
+              estado: 'libre' as EstadoMesa,
+              cuentaActivaId: null,
+              horaApertura: null,
+              totalParcial: 0,
+              meseroAsignado: undefined,
+            };
+          }
+        }
+        return m;
+      });
+
+      const mesasFinales = deduplicarYSanearMesas(mesasCorregidas);
+      setMesas(mesasFinales);
+      RepositorioStorage.guardarMesas(mesasFinales);
+
+      // Depurar cuentas activas (solo conservar aquellas con mesa ocupada o por cobrar, o activas localmente)
+      const mesasOcupadasIds = new Set(
+        mesasFinales.filter((m) => m.estado !== 'libre' && m.cuentaActivaId).map((m) => m.cuentaActivaId)
+      );
+
+      const cuentasDepuradas: Record<string, Cuenta> = {};
+      for (const [id, cta] of Object.entries(cuentasRemotas)) {
+        if (mesasOcupadasIds.has(id)) {
+          cuentasDepuradas[id] = cta;
+        } else if (cuentasActivas[id]) {
+          // Si la cuenta existe en la memoria local activa de este dispositivo, la conservamos
+          cuentasDepuradas[id] = cuentasActivas[id];
+        } else {
+          console.log(`[RestauranteContext] Cancelando cuenta huérfana en Supabase: ${id} de ${cta.nombreMesa}`);
+          servicioSupabase.cancelarCuentaRemota(id).catch(console.error);
+        }
+      }
+
+      setCuentasActivas(cuentasDepuradas);
+      RepositorioStorage.guardarCuentasActivas(cuentasDepuradas);
+
+      const fechaAperturaTurno = estadoRemoto.corteActual?.fechaApertura ?? corteActual.fechaApertura;
+      if (estadoRemoto.pedidosCocina) {
+        setPedidosCocina((prev) => {
+          const mapa = new Map<string, PedidoCocina>();
+          // Conservar únicamente pedidos pertenecientes al turno activo
+          const esDelTurnoActual = (p: PedidoCocina): boolean => {
+            if (!fechaAperturaTurno) return true;
+            return new Date(p.horaEnvio).getTime() >= new Date(fechaAperturaTurno).getTime() - 60000;
+          };
+          for (const p of prev) {
+            if (esDelTurnoActual(p)) mapa.set(p.id, p);
+          }
+          for (const p of estadoRemoto.pedidosCocina) {
+            if (esDelTurnoActual(p)) {
+              const ultimaModLocal = ultimasModificacionesCocinaRef.current.get(p.id);
+              // Si el pedido fue editado localmente hace menos de 4 segundos, conservar la versión local
+              if (ultimaModLocal && Date.now() - ultimaModLocal < 4000) {
+                continue;
+              }
+              mapa.set(p.id, p);
+            }
+          }
+          const combinados = Array.from(mapa.values()).sort(
+            (a, b) => new Date(b.horaEnvio).getTime() - new Date(a.horaEnvio).getTime()
+          );
+          RepositorioStorage.guardarPedidosCocina(combinados);
+          return combinados;
+        });
+      }
+
+      if (estadoRemoto.cuentasCerradas && estadoRemoto.cuentasCerradas.length > 0) {
+        setCuentasCerradas((prev) => {
+          const mapa = new Map<string, Cuenta>();
+          for (const c of prev) mapa.set(c.id, c);
+          for (const c of estadoRemoto.cuentasCerradas) mapa.set(c.id, c);
+          const combinadas = Array.from(mapa.values()).sort(
+            (a, b) =>
+              new Date(b.horaCierre ?? b.horaApertura).getTime() -
+              new Date(a.horaCierre ?? a.horaApertura).getTime()
+          );
+          RepositorioStorage.guardarCuentasCerradas(combinadas);
+          return combinadas;
+        });
+      }
+
+      if (estadoRemoto.corteActual) {
+        setCorteActual((prev) => {
+          const propinas = estadoRemoto.corteActual?.totalPropinas ?? prev.totalPropinas ?? 0;
+          const corteSync = {
+            ...estadoRemoto.corteActual!,
+            totalPropinas: propinas,
+          };
+          RepositorioStorage.guardarCorteActual(corteSync);
+          return corteSync;
+        });
+      }
+      console.log('[RestauranteContext] Sincronización completa con Supabase exitosa.');
+    } catch (err: unknown) {
+      console.warn('[RestauranteContext] Falló sincronización remota:', err);
+    }
+  }, []);
+
+  // Detección de conectividad del navegador y re-sincronización al volver
+  useEffect(() => {
+    const handleOnline = (): void => {
+      setEstaEnLinea(true);
+      sincronizarConServidorRemoto().catch(console.error);
+    };
+    const handleOffline = (): void => setEstaEnLinea(false);
+    const handleVisibilidad = (): void => {
+      if (document.visibilityState === 'visible') {
+        sincronizarConServidorRemoto().catch(console.error);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilidad);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilidad);
+    };
+  }, [sincronizarConServidorRemoto]);
+
+  // Persistencia local
+  useEffect(() => {
+    RepositorioStorage.guardarMesas(mesas);
+  }, [mesas]);
+
+  useEffect(() => {
+    RepositorioStorage.guardarCuentasActivas(cuentasActivas);
+  }, [cuentasActivas]);
+
+  useEffect(() => {
+    RepositorioStorage.guardarPedidosCocina(pedidosCocina);
+  }, [pedidosCocina]);
+
+  // Suscripción al bus de sincronización en tiempo real
+  useEffect(() => {
+    const desuscribir = servicioSincronizacion.suscribir((mensaje: MensajeSincronizacion) => {
+      const { tipo, payload } = mensaje;
+
+      switch (tipo) {
+        case 'SYNC_ESTADO_COMPLETO': {
+          const datos = payload as {
+            mesas?: Mesa[];
+            cuentasActivas?: Record<string, Cuenta>;
+            cuentasCerradas?: Cuenta[];
+            pedidosCocina?: PedidoCocina[];
+            corteActual?: CorteCaja;
+            clientesConectadosCount?: number;
+          };
+
+          if (datos.mesas && Array.isArray(datos.mesas) && datos.mesas.length > 0) {
+            const saneadas = deduplicarYSanearMesas(datos.mesas);
+            setMesas(saneadas);
+            RepositorioStorage.guardarMesas(saneadas);
+          } else {
+            // Si el servidor aún no tiene mesas, enviamos las mesas y cuentas locales actuales
+            const mesasLocales = RepositorioStorage.obtenerMesas();
+            const cuentasLocales = RepositorioStorage.obtenerCuentasActivas();
+            servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+              mesas: mesasLocales,
+              cuentasActivas: cuentasLocales,
+            });
+          }
+          if (datos.cuentasActivas) {
+            setCuentasActivas(datos.cuentasActivas);
+            RepositorioStorage.guardarCuentasActivas(datos.cuentasActivas);
+          }
+          if (datos.cuentasCerradas) {
+            setCuentasCerradas(datos.cuentasCerradas);
+            RepositorioStorage.guardarCuentasCerradas(datos.cuentasCerradas);
+          }
+          if (datos.pedidosCocina) {
+            setPedidosCocina((prev) => {
+              const mapa = new Map<string, PedidoCocina>();
+              for (const p of prev) mapa.set(p.id, p);
+              for (const p of datos.pedidosCocina!) mapa.set(p.id, p);
+              const combinados = Array.from(mapa.values()).sort(
+                (a, b) => new Date(b.horaEnvio).getTime() - new Date(a.horaEnvio).getTime()
+              );
+              RepositorioStorage.guardarPedidosCocina(combinados);
+              return combinados;
+            });
+          }
+          if (datos.corteActual) {
+            setCorteActual(datos.corteActual);
+          }
+          if (datos.clientesConectadosCount) {
+            setDispositivosConectados(datos.clientesConectadosCount);
+          }
+          break;
+        }
+
+        case 'ESTADO_CONEXION_ACTUALIZADO': {
+          const datos = payload as { clientesConectadosCount?: number };
+          if (typeof datos.clientesConectadosCount === 'number') {
+            setDispositivosConectados(datos.clientesConectadosCount);
+          }
+          break;
+        }
+
+        case 'DISPOSITIVOS_ACTUALIZADOS': {
+          const datos = payload as { clientesConectadosCount?: number };
+          if (datos && typeof datos.clientesConectadosCount === 'number') {
+            setDispositivosConectados(datos.clientesConectadosCount);
+          }
+          break;
+        }
+
+        case 'MESA_ACTUALIZADA': {
+          const datos = payload as { mesas?: Mesa[]; cuentasActivas?: Record<string, Cuenta> };
+          if (datos.mesas) {
+            const saneadas = deduplicarYSanearMesas(datos.mesas);
+            setMesas(saneadas);
+            RepositorioStorage.guardarMesas(saneadas);
+          }
+          if (datos.cuentasActivas) {
+            setCuentasActivas(datos.cuentasActivas);
+            RepositorioStorage.guardarCuentasActivas(datos.cuentasActivas);
+          }
+          break;
+        }
+
+        case 'MESA_ELIMINADA': {
+          const datos = payload as { mesaId?: string };
+          if (datos.mesaId) {
+            setMesas((prev) => {
+              const filtradas = prev.filter((m) => m.id !== datos.mesaId);
+              RepositorioStorage.guardarMesas(filtradas);
+              return filtradas;
+            });
+            setMesaSeleccionadaId((actual) => (actual === datos.mesaId ? null : actual));
+          }
+          break;
+        }
+
+        case 'NUEVA_COMANDA_COCINA': {
+          const datos = payload as {
+            pedido?: PedidoCocina;
+            mesas?: Mesa[];
+            cuentasActivas?: Record<string, Cuenta>;
+          };
+          if (datos.pedido) {
+            const pedidoEntrante = datos.pedido as PedidoCocina;
+            setPedidosCocina((prev) => {
+              if (prev.some((p) => p.id === pedidoEntrante.id)) {
+                return prev;
+              }
+              reproducirCampanaCocina();
+              return [pedidoEntrante, ...prev];
+            });
+          }
+          if (datos.mesas) {
+            const saneadas = deduplicarYSanearMesas(datos.mesas);
+            setMesas(saneadas);
+            RepositorioStorage.guardarMesas(saneadas);
+          }
+          if (datos.cuentasActivas) setCuentasActivas(datos.cuentasActivas);
+          break;
+        }
+
+        case 'PEDIDO_COCINA_ACTUALIZADO': {
+          const datos = payload as { pedido?: PedidoCocina };
+          if (datos.pedido) {
+            setPedidosCocina((prev) =>
+              prev.map((p) => (p.id === datos.pedido?.id ? (datos.pedido as PedidoCocina) : p))
+            );
+          }
+          break;
+        }
+
+        case 'CUENTA_COBRADA': {
+          const datos = payload as {
+            mesas?: Mesa[];
+            cuentasActivas?: Record<string, Cuenta>;
+            corteActual?: CorteCaja;
+            cuentaCerrada?: Cuenta;
+          };
+          if (datos.mesas) {
+            const saneadas = deduplicarYSanearMesas(datos.mesas);
+            setMesas(saneadas);
+            RepositorioStorage.guardarMesas(saneadas);
+          }
+          if (datos.cuentasActivas) setCuentasActivas(datos.cuentasActivas);
+          if (datos.corteActual) setCorteActual(datos.corteActual);
+          if (datos.cuentaCerrada) {
+            const ctaCerrada = datos.cuentaCerrada as Cuenta;
+            setCuentasCerradas((prev) => {
+              if (prev.some((item) => item.id === ctaCerrada.id)) return prev;
+              const nuevas = [ctaCerrada, ...prev];
+              RepositorioStorage.guardarCuentasCerradas(nuevas);
+              return nuevas;
+            });
+            RepositorioStorage.registrarCuentaCerrada(ctaCerrada);
+          }
+          break;
+        }
+
+        case 'TURNO_REINICIADO': {
+          const datos = payload as {
+            corteActual?: CorteCaja;
+            turnoCerrado?: TurnoCerrado;
+            mesas?: Mesa[];
+            cuentasActivas?: Record<string, Cuenta>;
+          };
+          if (datos.corteActual) setCorteActual(datos.corteActual);
+          if (datos.turnoCerrado) {
+            setHistorialTurnos((prev) => {
+              if (prev.some((t) => t.id === datos.turnoCerrado?.id)) return prev;
+              const nuevo = [datos.turnoCerrado!, ...prev];
+              RepositorioStorage.guardarHistorialTurnos(nuevo);
+              return nuevo;
+            });
+          }
+          if (datos.mesas) {
+            const saneadas = deduplicarYSanearMesas(datos.mesas);
+            setMesas(saneadas);
+            RepositorioStorage.guardarMesas(saneadas);
+          } else {
+            setMesas((prev) => {
+              const liberadas = prev.map((m) => ({
+                ...m,
+                estado: 'libre' as EstadoMesa,
+                cuentaActivaId: null,
+                horaApertura: null,
+                totalParcial: 0,
+                meseroAsignado: undefined,
+              }));
+              const saneadas = deduplicarYSanearMesas(liberadas);
+              RepositorioStorage.guardarMesas(saneadas);
+              return saneadas;
+            });
+          }
+          setCuentasActivas({});
+          RepositorioStorage.guardarCuentasActivas({});
+          setMesaSeleccionadaId(null);
+          setTicketImpresion(null);
+          setCuentasCerradas([]);
+          setPedidosCocina([]);
+          RepositorioStorage.guardarPedidosCocina([]);
+          break;
+        }
+
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      desuscribir();
+    };
+  }, []);
+
+  // Suscripción y carga de Supabase en la nube con re-sincronización activa al reconectar
+  useEffect(() => {
+    let montado = true;
+
+    // 1. Cargar estado remoto inicial
+    sincronizarConServidorRemoto().catch(console.error);
+
+    // 2. Suscribirse a cambios en tiempo real vía Supabase Realtime
+    const desuscribirSupabase = servicioSupabase.suscribir((tipo, payload) => {
+      if (!montado) return;
+
+      if (tipo === 'ESTADO_CONEXION_ACTUALIZADO') {
+        const datos = payload as { conectado: boolean };
+        setEstaEnLinea(datos.conectado);
+        if (datos.conectado) {
+          // Al reconectar, recuperar inmediatamente cualquier cambio ocurrido durante la desconexión
+          sincronizarConServidorRemoto().catch(console.error);
+        }
+      } else if (tipo === 'DISPOSITIVOS_ACTUALIZADOS') {
+        const datos = payload as { clientesConectadosCount?: number };
+        if (typeof datos?.clientesConectadosCount === 'number') {
+          setDispositivosConectados(datos.clientesConectadosCount);
+        }
+      } else if (tipo === 'MESA_REMOTA_ACTUALIZADA' && payload) {
+        interface FilaMesaRaw {
+          id: string;
+          numero: number;
+          nombre: string;
+          capacidad: number;
+          estado: string;
+          area: string;
+          total_parcial: number;
+          cuenta_activa_id: string | null;
+          hora_apertura: string | null;
+          mesero_asignado: string | null;
+          notas: string | null;
+        }
+        const m = payload as FilaMesaRaw;
+        const mesaAdaptada: Mesa = {
+          id: m.id,
+          numero: m.numero,
+          nombre: m.nombre,
+          capacidad: m.capacidad,
+          estado: m.estado as Mesa['estado'],
+          area: m.area as Mesa['area'],
+          totalParcial: Number(m.total_parcial ?? 0),
+          cuentaActivaId: m.cuenta_activa_id,
+          horaApertura: m.hora_apertura,
+          meseroAsignado: m.mesero_asignado ?? undefined,
+        };
+
+        setMesas((prev) => {
+          const index = prev.findIndex(
+            (item) =>
+              item.id === mesaAdaptada.id ||
+              (item.area === mesaAdaptada.area && item.numero === mesaAdaptada.numero)
+          );
+          let actualizadas: Mesa[];
+          if (index >= 0) {
+            actualizadas = [...prev];
+            actualizadas[index] = mesaAdaptada;
+          } else {
+            actualizadas = [...prev, mesaAdaptada];
+          }
+          const saneadas = deduplicarYSanearMesas(actualizadas);
+          RepositorioStorage.guardarMesas(saneadas);
+          return saneadas;
+        });
+
+        // Si la mesa pasó a estar libre, remover cualquier cuenta activa asociada
+        if (mesaAdaptada.estado === 'libre') {
+          setCuentasActivas((prev) => {
+            let huboCambio = false;
+            const copia = { ...prev };
+            for (const [id, cta] of Object.entries(copia)) {
+              if (
+                cta.mesaId === mesaAdaptada.id ||
+                (cta.numeroMesa === mesaAdaptada.numero && cta.nombreMesa === mesaAdaptada.nombre)
+              ) {
+                delete copia[id];
+                huboCambio = true;
+              }
+            }
+            if (huboCambio) {
+              RepositorioStorage.guardarCuentasActivas(copia);
+              return copia;
+            }
+            return prev;
+          });
+        }
+      } else if (tipo === 'CUENTA_REMOTA_ACTUALIZADA' && payload) {
+        interface FilaCuentaRaw {
+          id: string;
+          mesa_id: string;
+          numero_mesa: number;
+          nombre_mesa: string;
+          items: unknown;
+          subtotal: number;
+          descuento: number;
+          propina: number;
+          total: number;
+          estado: string;
+          hora_apertura: string;
+          hora_cierre: string | null;
+          mesero: string;
+          metodo_pago: string | null;
+          division_cuenta: unknown;
+          desglose_mixto: unknown;
+        }
+        const c = payload as FilaCuentaRaw;
+        const cuentaAdaptada: Cuenta = {
+          id: c.id,
+          mesaId: c.mesa_id,
+          numeroMesa: c.numero_mesa,
+          nombreMesa: c.nombre_mesa,
+          items: Array.isArray(c.items) ? (c.items as Cuenta['items']) : [],
+          subtotal: Number(c.subtotal ?? 0),
+          descuento: Number(c.descuento ?? 0),
+          propina: Number(c.propina ?? 0),
+          total: Number(c.total ?? 0),
+          estado: c.estado as Cuenta['estado'],
+          horaApertura: c.hora_apertura,
+          horaCierre: c.hora_cierre,
+          mesero: c.mesero,
+          metodoPago: c.metodo_pago ? (c.metodo_pago as Cuenta['metodoPago']) : undefined,
+          divisionCuenta: c.division_cuenta ? (c.division_cuenta as Cuenta['divisionCuenta']) : undefined,
+          desgloseMixto: c.desglose_mixto ? (c.desglose_mixto as Cuenta['desgloseMixto']) : undefined,
+        };
+
+        if (cuentaAdaptada.estado === 'cerrada' || c.estado === 'cancelada') {
+          // Quitar de cuentas activas
+          setCuentasActivas((prev) => {
+            if (prev[cuentaAdaptada.id]) {
+              const copia = { ...prev };
+              delete copia[cuentaAdaptada.id];
+              RepositorioStorage.guardarCuentasActivas(copia);
+              return copia;
+            }
+            return prev;
+          });
+
+          if (cuentaAdaptada.estado === 'cerrada') {
+            setCuentasCerradas((prev) => {
+              if (prev.some((item) => item.id === cuentaAdaptada.id)) return prev;
+              const nuevas = [cuentaAdaptada, ...prev];
+              RepositorioStorage.guardarCuentasCerradas(nuevas);
+              return nuevas;
+            });
+            RepositorioStorage.registrarCuentaCerrada(cuentaAdaptada);
+          }
+
+          // Si la cuenta se cobró/cerró, asegurar que su mesa se libere de inmediato
+          setMesas((prev) => {
+            const index = prev.findIndex((m) => m.id === cuentaAdaptada.mesaId);
+            if (index >= 0 && prev[index].estado !== 'libre') {
+              const actualizadas = [...prev];
+              actualizadas[index] = {
+                ...actualizadas[index],
+                estado: 'libre',
+                cuentaActivaId: null,
+                totalParcial: 0,
+                horaApertura: null,
+                meseroAsignado: undefined,
+              };
+              const saneadas = deduplicarYSanearMesas(actualizadas);
+              RepositorioStorage.guardarMesas(saneadas);
+              return saneadas;
+            }
+            return prev;
+          });
+        } else {
+          // Cuenta abierta
+          setCuentasActivas((prev) => {
+            const copia = { ...prev, [cuentaAdaptada.id]: cuentaAdaptada };
+            RepositorioStorage.guardarCuentasActivas(copia);
+            return copia;
+          });
+        }
+      } else if (tipo === 'PEDIDO_COCINA_REMOTO_ACTUALIZADO' && payload) {
+        interface FilaCocinaRaw {
+          id: string;
+          comanda_id: string;
+          mesa_id: string;
+          nombre_mesa: string;
+          mesero: string;
+          hora_envio: string;
+          items: unknown;
+          estado: string;
+        }
+        const p = payload as FilaCocinaRaw;
+        const pedidoAdaptado: PedidoCocina = {
+          id: p.id,
+          comandaId: p.comanda_id,
+          mesaId: p.mesa_id,
+          nombreMesa: p.nombre_mesa,
+          mesero: p.mesero,
+          horaEnvio: p.hora_envio,
+          items: Array.isArray(p.items) ? (p.items as PedidoCocina['items']) : [],
+          estado: p.estado as PedidoCocina['estado'],
+        };
+
+        setPedidosCocina((prev) => {
+          const ultimaModLocal = ultimasModificacionesCocinaRef.current.get(pedidoAdaptado.id);
+          // Proteger contra ecos rezagados si este dispositivo modificó el pedido recientemente
+          if (ultimaModLocal && Date.now() - ultimaModLocal < 2500) {
+            return prev;
+          }
+          const existe = prev.some((it) => it.id === pedidoAdaptado.id);
+          if (existe) {
+            return prev.map((it) => (it.id === pedidoAdaptado.id ? pedidoAdaptado : it));
+          }
+          reproducirCampanaCocina();
+          return [pedidoAdaptado, ...prev];
+        });
+      }
+    });
+
+    return () => {
+      montado = false;
+      desuscribirSupabase();
+    };
+  }, []);
+
+  const mesaSeleccionada = useMemo<Mesa | null>(() => {
+    if (!mesaSeleccionadaId) return null;
+    return mesas.find((m) => m.id === mesaSeleccionadaId) ?? null;
+  }, [mesas, mesaSeleccionadaId]);
+
+  const cuentaActiva = useMemo<Cuenta | null>(() => {
+    if (!mesaSeleccionada || !mesaSeleccionada.cuentaActivaId) return null;
+    return cuentasActivas[mesaSeleccionada.cuentaActivaId] ?? null;
+  }, [mesaSeleccionada, cuentasActivas]);
+
+  const seleccionarMesa = useCallback((mesa: Mesa | null): void => {
+    setMesaSeleccionadaId(mesa ? mesa.id : null);
+  }, []);
+
+  /**
+   * Abre una mesa libre y le genera una cuenta activa.
+   */
+  const abrirMesa = useCallback(
+    (mesaId: string, mesero?: string): void => {
+      const mesa = mesas.find((m) => m.id === mesaId);
+      if (!mesa) return;
+
+      const nuevaCuentaId = `cuenta-${Date.now()}-${mesa.numero}`;
+      const horaActual = new Date().toISOString();
+
+      const nuevaCuenta: Cuenta = {
+        id: nuevaCuentaId,
+        mesaId: mesa.id,
+        numeroMesa: mesa.numero,
+        nombreMesa: mesa.nombre,
+        items: [],
+        subtotal: 0,
+        descuento: 0,
+        propina: 0,
+        total: 0,
+        estado: 'abierta',
+        horaApertura: horaActual,
+        horaCierre: null,
+        mesero: mesero ?? meseroActual,
+      };
+
+      const nuevasCuentas = { ...cuentasActivas, [nuevaCuentaId]: nuevaCuenta };
+      const nuevasMesas = mesas.map((m) =>
+        m.id === mesaId
+          ? {
+              ...m,
+              estado: 'ocupada' as EstadoMesa,
+              cuentaActivaId: nuevaCuentaId,
+              horaApertura: horaActual,
+              totalParcial: 0,
+              meseroAsignado: mesero ?? meseroActual,
+            }
+          : m
+      );
+
+      setCuentasActivas(nuevasCuentas);
+      setMesas(nuevasMesas);
+
+      // Sincronizar en vivo a todos los dispositivos
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: nuevasMesas,
+        cuentasActivas: nuevasCuentas,
+      });
+
+      // Persistir y sincronizar en Supabase (o cola offline)
+      servicioSupabase.guardarMesas(nuevasMesas).catch(console.error);
+      servicioSupabase.guardarCuentas(nuevasCuentas).catch(console.error);
+    },
+    [mesas, cuentasActivas, meseroActual]
+  );
+
+  const cambiarEstadoMesa = useCallback(
+    (mesaId: string, nuevoEstado: EstadoMesa): void => {
+      const nuevasMesas = mesas.map((m) => (m.id === mesaId ? { ...m, estado: nuevoEstado } : m));
+      setMesas(nuevasMesas);
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: nuevasMesas,
+        cuentasActivas,
+      });
+      servicioSupabase.guardarMesas(nuevasMesas).catch(console.error);
+    },
+    [mesas, cuentasActivas]
+  );
+
+  const agregarProductoAComanda = useCallback(
+    (
+      mesaId: string,
+      producto: Producto,
+      cantidad: number,
+      notas: string,
+      modificadores: string[]
+    ): void => {
+      const targetMesa = mesas.find((m) => m.id === mesaId);
+      if (!targetMesa) return;
+
+      let cuentaId = targetMesa.cuentaActivaId;
+      let cuentasCopia = { ...cuentasActivas };
+      let mesasCopia = [...mesas];
+
+      if (!cuentaId) {
+        cuentaId = `cuenta-${Date.now()}-${targetMesa.numero}`;
+        const horaActual = new Date().toISOString();
+        const nuevaCuenta: Cuenta = {
+          id: cuentaId,
+          mesaId: targetMesa.id,
+          numeroMesa: targetMesa.numero,
+          nombreMesa: targetMesa.nombre,
+          items: [],
+          subtotal: 0,
+          descuento: 0,
+          propina: 0,
+          total: 0,
+          estado: 'abierta',
+          horaApertura: horaActual,
+          horaCierre: null,
+          mesero: meseroActual,
+        };
+
+        cuentasCopia[cuentaId] = nuevaCuenta;
+        mesasCopia = mesasCopia.map((m) =>
+          m.id === mesaId
+            ? {
+                ...m,
+                estado: 'ocupada' as EstadoMesa,
+                cuentaActivaId: cuentaId,
+                horaApertura: horaActual,
+                meseroAsignado: meseroActual,
+              }
+            : m
+        );
+      }
+
+      const nuevoItem: ItemComanda = {
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        productoId: producto.id,
+        nombre: producto.nombre,
+        precioUnitario: producto.precio,
+        categoria: producto.categoria,
+        requierePreparacion: producto.requierePreparacion,
+        cantidad: Math.max(1, cantidad),
+        cantidadEnviadaCocina: 0,
+        notas: notas.trim(),
+        modificadoresSeleccionados: [...modificadores],
+        fechaAgregado: new Date().toISOString(),
+      };
+
+      const cuentaExistente = cuentasCopia[cuentaId];
+      if (cuentaExistente) {
+        const nuevosItems = [...cuentaExistente.items, nuevoItem];
+        const nuevoSubtotal = nuevosItems.reduce(
+          (acc, it) => acc + it.precioUnitario * it.cantidad,
+          0
+        );
+
+        cuentasCopia[cuentaId] = {
+          ...cuentaExistente,
+          items: nuevosItems,
+          subtotal: nuevoSubtotal,
+          total: nuevoSubtotal + cuentaExistente.propina - cuentaExistente.descuento,
+        };
+
+        mesasCopia = mesasCopia.map((m) =>
+          m.id === mesaId
+            ? {
+                ...m,
+                estado: 'ocupada' as EstadoMesa,
+                totalParcial: nuevoSubtotal,
+              }
+            : m
+        );
+      }
+
+      setCuentasActivas(cuentasCopia);
+      setMesas(mesasCopia);
+
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: mesasCopia,
+        cuentasActivas: cuentasCopia,
+      });
+
+      servicioSupabase.guardarCuentas(cuentasCopia).catch(console.error);
+      servicioSupabase.guardarMesas(mesasCopia).catch(console.error);
+    },
+    [mesas, cuentasActivas, meseroActual]
+  );
+
+  const modificarCantidadItem = useCallback(
+    (mesaId: string, itemId: string, delta: number): void => {
+      const mesa = mesas.find((m) => m.id === mesaId);
+      if (!mesa || !mesa.cuentaActivaId) return;
+
+      const cuentaId = mesa.cuentaActivaId;
+      const cuenta = cuentasActivas[cuentaId];
+      if (!cuenta) return;
+
+      const nuevosItems = cuenta.items
+        .map((it) => {
+          if (it.id === itemId) {
+            const nuevaCantidad = it.cantidad + delta;
+            return nuevaCantidad > 0
+              ? {
+                  ...it,
+                  cantidad: nuevaCantidad,
+                  cantidadEnviadaCocina: Math.min(nuevaCantidad, it.cantidadEnviadaCocina ?? 0),
+                }
+              : null;
+          }
+          return it;
+        })
+        .filter((it): it is ItemComanda => it !== null);
+
+      const nuevoSubtotal = nuevosItems.reduce(
+        (acc, it) => acc + it.precioUnitario * it.cantidad,
+        0
+      );
+
+      const cuentasCopia = {
+        ...cuentasActivas,
+        [cuentaId]: {
+          ...cuenta,
+          items: nuevosItems,
+          subtotal: nuevoSubtotal,
+          total: nuevoSubtotal + cuenta.propina - cuenta.descuento,
+        },
+      };
+
+      const mesasCopia = mesas.map((m) =>
+        m.id === mesaId ? { ...m, totalParcial: nuevoSubtotal } : m
+      );
+
+      setCuentasActivas(cuentasCopia);
+      setMesas(mesasCopia);
+
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: mesasCopia,
+        cuentasActivas: cuentasCopia,
+      });
+
+      servicioSupabase.guardarCuentas(cuentasCopia).catch(console.error);
+      servicioSupabase.guardarMesas(mesasCopia).catch(console.error);
+    },
+    [mesas, cuentasActivas]
+  );
+
+  const eliminarItemComanda = useCallback(
+    (mesaId: string, itemId: string): void => {
+      const mesa = mesas.find((m) => m.id === mesaId);
+      if (!mesa || !mesa.cuentaActivaId) return;
+
+      const cuentaId = mesa.cuentaActivaId;
+      const cuenta = cuentasActivas[cuentaId];
+      if (!cuenta) return;
+
+      const nuevosItems = cuenta.items.filter((it) => it.id !== itemId);
+      const nuevoSubtotal = nuevosItems.reduce(
+        (acc, it) => acc + it.precioUnitario * it.cantidad,
+        0
+      );
+
+      const cuentasCopia = {
+        ...cuentasActivas,
+        [cuentaId]: {
+          ...cuenta,
+          items: nuevosItems,
+          subtotal: nuevoSubtotal,
+          total: nuevoSubtotal + cuenta.propina - cuenta.descuento,
+        },
+      };
+
+      const mesasCopia = mesas.map((m) =>
+        m.id === mesaId ? { ...m, totalParcial: nuevoSubtotal } : m
+      );
+
+      setCuentasActivas(cuentasCopia);
+      setMesas(mesasCopia);
+
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: mesasCopia,
+        cuentasActivas: cuentasCopia,
+      });
+
+      servicioSupabase.guardarCuentas(cuentasCopia).catch(console.error);
+      servicioSupabase.guardarMesas(mesasCopia).catch(console.error);
+    },
+    [mesas, cuentasActivas]
+  );
+
+  const solicitarCuenta = useCallback(
+    (mesaId: string): void => {
+      let mesaModificada: Mesa | null = null;
+      const nuevasMesas = mesas.map((m) => {
+        if (m.id === mesaId) {
+          mesaModificada = { ...m, estado: 'por_cobrar' as EstadoMesa };
+          return mesaModificada;
+        }
+        return m;
+      });
+      setMesas(nuevasMesas);
+      RepositorioStorage.guardarMesas(nuevasMesas);
+
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: nuevasMesas,
+        cuentasActivas,
+      });
+
+      if (mesaModificada) {
+        servicioSupabase.guardarMesa(mesaModificada).catch(console.error);
+      }
+      servicioSupabase.guardarMesas(nuevasMesas).catch(console.error);
+    },
+    [mesas, cuentasActivas]
+  );
+
+  /**
+   * Envía la comanda a la pantalla de cocina (KDS).
+   * Por defecto envía ÚNICAMENTE los ítems o cantidades nuevas aún no enviadas.
+   * Si forzarReenvioCompleto es true, envía todos los ítems de la cuenta.
+   */
+  const enviarComandaACocina = useCallback(
+    (
+      mesaId: string,
+      forzarReenvioCompleto = false
+    ): { enviadosCount: number; exito: boolean; mensaje: string } => {
+      const mesa = mesas.find((m) => m.id === mesaId);
+      if (!mesa || !mesa.cuentaActivaId) {
+        return { enviadosCount: 0, exito: false, mensaje: 'No hay mesa o cuenta activa.' };
+      }
+
+      const cuenta = cuentasActivas[mesa.cuentaActivaId];
+      if (!cuenta || cuenta.items.length === 0) {
+        return { enviadosCount: 0, exito: false, mensaje: 'La comanda no tiene platillos agregados.' };
+      }
+
+      // Filtrar sólo ítems que requieran preparación en cocina y tengan cantidades pendientes
+      const itemsAEnviar = cuenta.items
+        .map((it) => {
+          if (!esItemParaCocina(it)) {
+            return null;
+          }
+          const enviada = it.cantidadEnviadaCocina ?? 0;
+          const pendiente = forzarReenvioCompleto ? it.cantidad : Math.max(0, it.cantidad - enviada);
+          return pendiente > 0
+            ? {
+                id: `kds-${it.id}-${Date.now()}`,
+                nombre: it.nombre,
+                cantidad: pendiente,
+                notas: it.notas,
+                modificadores: it.modificadoresSeleccionados,
+                completado: false,
+              }
+            : null;
+        })
+        .filter((it): it is NonNullable<typeof it> => it !== null);
+
+      if (itemsAEnviar.length === 0) {
+        // Verificar si la cuenta contiene bebidas que entrega el mesero
+        const tieneBebidasMesero = cuenta.items.some((it) => !esItemParaCocina(it));
+        if (tieneBebidasMesero) {
+          // Marcar bebidas como atendidas para que no figuren pendientes
+          const itemsActualizados = cuenta.items.map((it) => ({
+            ...it,
+            cantidadEnviadaCocina: it.cantidad,
+          }));
+          const cuentasActualizadas = {
+            ...cuentasActivas,
+            [cuenta.id]: {
+              ...cuenta,
+              items: itemsActualizados,
+            },
+          };
+          setCuentasActivas(cuentasActualizadas);
+          servicioSupabase.guardarCuentas(cuentasActualizadas).catch(console.error);
+          return {
+            enviadosCount: 0,
+            exito: true,
+            mensaje: 'Las bebidas las entrega el mesero directamente (no requieren cocina).',
+          };
+        }
+
+        return {
+          enviadosCount: 0,
+          exito: false,
+          mensaje: 'Todos los platillos de esta comanda ya fueron enviados a cocina.',
+        };
+      }
+
+      // Calcular ronda de envío para distinguir si es orden inicial o adición
+      const pedidosPreviosMesa = pedidosCocina.filter((p) => p.mesaId === mesa.id).length;
+      const numeroRonda = pedidosPreviosMesa + 1;
+
+      const nuevoPedido: PedidoCocina = {
+        id: `ped-${Date.now()}-${mesa.numero}`,
+        comandaId: cuenta.id,
+        mesaId: mesa.id,
+        nombreMesa: numeroRonda > 1 ? `${mesa.nombre} (Ronda ${numeroRonda})` : mesa.nombre,
+        mesero: cuenta.mesero,
+        horaEnvio: new Date().toISOString(),
+        items: itemsAEnviar,
+        estado: 'pendiente',
+        numeroRonda,
+      };
+
+      // Actualizar la cuenta marcando los ítems de cocina y las bebidas como atendidos
+      const itemsActualizados = cuenta.items.map((it) => ({
+        ...it,
+        cantidadEnviadaCocina: it.cantidad,
+      }));
+
+      const cuentasActualizadas = {
+        ...cuentasActivas,
+        [cuenta.id]: {
+          ...cuenta,
+          items: itemsActualizados,
+        },
+      };
+
+      setCuentasActivas(cuentasActualizadas);
+      setPedidosCocina((prev) => [nuevoPedido, ...prev]);
+      reproducirCampanaCocina();
+
+      // Emitir a todas las tablets de cocina en tiempo real
+      servicioSincronizacion.emitir('NUEVA_COMANDA_COCINA', {
+        pedido: nuevoPedido,
+        mesas,
+        cuentasActivas: cuentasActualizadas,
+      });
+
+      // Persistir en Supabase
+      servicioSupabase.guardarPedidoCocina(nuevoPedido).catch(console.error);
+      servicioSupabase.guardarCuentas(cuentasActualizadas).catch(console.error);
+
+      const totalPiezas = itemsAEnviar.reduce((acc, it) => acc + it.cantidad, 0);
+      return {
+        enviadosCount: totalPiezas,
+        exito: true,
+        mensaje: `Se enviaron ${totalPiezas} platillo(s) nuevo(s) a cocina (Ronda ${numeroRonda}).`,
+      };
+    },
+    [mesas, cuentasActivas, pedidosCocina]
+  );
+
+  /**
+   * Cambia el estado de un pedido en la pantalla de cocina.
+   */
+  const cambiarEstadoPedidoCocina = useCallback(
+    (pedidoId: string, nuevoEstado: EstadoPedidoCocina): void => {
+      let pedidoActualizado: PedidoCocina | null = null;
+      setPedidosCocina((prev) => {
+        const actualizados = prev.map((p) => {
+          if (p.id === pedidoId) {
+            pedidoActualizado = { ...p, estado: nuevoEstado };
+            return pedidoActualizado;
+          }
+          return p;
+        });
+        RepositorioStorage.guardarPedidosCocina(actualizados);
+        return actualizados;
+      });
+
+      if (pedidoActualizado) {
+        ultimasModificacionesCocinaRef.current.set(pedidoId, Date.now());
+        servicioSincronizacion.emitir('PEDIDO_COCINA_ACTUALIZADO', {
+          pedido: pedidoActualizado,
+        });
+
+        // Agrupar guardados rápidos (coalescing) para evitar condiciones de carrera en la red
+        const timerPrevio = timersGuardadoCocinaRef.current.get(pedidoId);
+        if (timerPrevio) clearTimeout(timerPrevio);
+        const nuevoTimer = setTimeout(() => {
+          timersGuardadoCocinaRef.current.delete(pedidoId);
+          servicioSupabase.guardarPedidoCocina(pedidoActualizado!).catch(console.error);
+        }, 220);
+        timersGuardadoCocinaRef.current.set(pedidoId, nuevoTimer);
+      }
+    },
+    []
+  );
+
+  /**
+   * Marca o desmarca un ítem individual como preparado en cocina.
+   */
+  const alternarItemCompletadoCocina = useCallback(
+    (pedidoId: string, itemId: string): void => {
+      let pedidoActualizado: PedidoCocina | null = null;
+      setPedidosCocina((prev) => {
+        const actualizados = prev.map((p) => {
+          if (p.id === pedidoId) {
+            const nuevosItems = p.items.map((it) =>
+              it.id === itemId ? { ...it, completado: !it.completado } : it
+            );
+            const todosCompletos = nuevosItems.every((it) => it.completado);
+            pedidoActualizado = {
+              ...p,
+              items: nuevosItems,
+              estado: todosCompletos ? 'listo' : p.estado === 'pendiente' ? 'en_preparacion' : p.estado,
+            };
+            return pedidoActualizado;
+          }
+          return p;
+        });
+        RepositorioStorage.guardarPedidosCocina(actualizados);
+        return actualizados;
+      });
+
+      if (pedidoActualizado) {
+        ultimasModificacionesCocinaRef.current.set(pedidoId, Date.now());
+        servicioSincronizacion.emitir('PEDIDO_COCINA_ACTUALIZADO', {
+          pedido: pedidoActualizado,
+        });
+
+        // Agrupar guardados rápidos (coalescing) para evitar condiciones de carrera en la red
+        const timerPrevio = timersGuardadoCocinaRef.current.get(pedidoId);
+        if (timerPrevio) clearTimeout(timerPrevio);
+        const nuevoTimer = setTimeout(() => {
+          timersGuardadoCocinaRef.current.delete(pedidoId);
+          servicioSupabase.guardarPedidoCocina(pedidoActualizado!).catch(console.error);
+        }, 220);
+        timersGuardadoCocinaRef.current.set(pedidoId, nuevoTimer);
+      }
+    },
+    []
+  );
+
+  const cerrarYCobrarCuenta = useCallback(
+    (
+      mesaId: string,
+      metodoPago: MetodoPago,
+      propina: number,
+      montoRecibido?: number,
+      desgloseMixto?: DesglosePagoMixto,
+      divisionCuenta?: DivisionCuentaInfo
+    ): { exito: boolean; cambio: number; cuentaCerrada?: Cuenta } => {
+      const mesa = mesas.find((m) => m.id === mesaId);
+      if (!mesa || !mesa.cuentaActivaId) {
+        return { exito: false, cambio: 0 };
+      }
+
+      const cuenta = cuentasActivas[mesa.cuentaActivaId];
+      if (!cuenta) {
+        return { exito: false, cambio: 0 };
+      }
+
+      const totalFinal = cuenta.subtotal + propina - cuenta.descuento;
+      const recibido = montoRecibido ?? totalFinal;
+      const cambio = recibido > totalFinal ? recibido - totalFinal : 0;
+      const horaCierre = new Date().toISOString();
+
+      const cuentaCerrada: Cuenta = {
+        ...cuenta,
+        propina,
+        total: totalFinal,
+        estado: 'cerrada',
+        horaCierre,
+        metodoPago,
+        montoRecibido: recibido,
+        cambioEntregado: cambio,
+        desgloseMixto,
+        divisionCuenta,
+      };
+
+      RepositorioStorage.registrarCuentaCerrada(cuentaCerrada);
+      setCuentasCerradas((prev) => [cuentaCerrada, ...prev]);
+
+      const nuevoTotalVentas = corteActual.totalVentas + totalFinal;
+      const nuevoTotalPropinas = (corteActual.totalPropinas ?? 0) + propina;
+      let nuevoEfectivo = corteActual.totalEfectivo;
+      let nuevoTarjeta = corteActual.totalTarjeta;
+      let nuevoTransf = corteActual.totalTransferencia;
+
+      if (metodoPago === 'mixto' && desgloseMixto) {
+        // Desglose exacto de los 2 métodos de pago
+        if (desgloseMixto.metodo1 === 'efectivo') nuevoEfectivo += desgloseMixto.monto1;
+        else if (desgloseMixto.metodo1 === 'tarjeta') nuevoTarjeta += desgloseMixto.monto1;
+        else if (desgloseMixto.metodo1 === 'transferencia') nuevoTransf += desgloseMixto.monto1;
+
+        if (desgloseMixto.metodo2 === 'efectivo') nuevoEfectivo += desgloseMixto.monto2;
+        else if (desgloseMixto.metodo2 === 'tarjeta') nuevoTarjeta += desgloseMixto.monto2;
+        else if (desgloseMixto.metodo2 === 'transferencia') nuevoTransf += desgloseMixto.monto2;
+      } else {
+        if (metodoPago === 'efectivo') nuevoEfectivo += totalFinal;
+        else if (metodoPago === 'tarjeta') nuevoTarjeta += totalFinal;
+        else if (metodoPago === 'transferencia') nuevoTransf += totalFinal;
+      }
+
+      const count = corteActual.cuentasCobradasCount + 1;
+      const promedio = count > 0 ? nuevoTotalVentas / count : 0;
+
+      const corteActualizado: CorteCaja = {
+        ...corteActual,
+        totalVentas: nuevoTotalVentas,
+        totalEfectivo: nuevoEfectivo,
+        totalTarjeta: nuevoTarjeta,
+        totalTransferencia: nuevoTransf,
+        totalPropinas: nuevoTotalPropinas,
+        cuentasCobradasCount: count,
+        ticketPromedio: Math.round(promedio * 100) / 100,
+      };
+      RepositorioStorage.guardarCorteActual(corteActualizado);
+      setCorteActual(corteActualizado);
+
+      // Marcar los pedidos de cocina de la mesa como entregados para retirarlos de la vista de preparación
+      // sin eliminarlos de la memoria ni del historial de comandas del turno
+      setPedidosCocina((prev) => {
+        const actualizados = prev.map((p) =>
+          (p.mesaId === mesa.id || p.mesaId === mesaId) && p.estado !== 'entregado'
+            ? { ...p, estado: 'entregado' as EstadoPedidoCocina }
+            : p
+        );
+        RepositorioStorage.guardarPedidosCocina(actualizados);
+        return actualizados;
+      });
+
+      const cuentasCopia = { ...cuentasActivas };
+      // Purgar tanto la cuenta cobrada como cualquier cuenta huérfana de esa misma mesa
+      for (const [id, cta] of Object.entries(cuentasCopia)) {
+        if (
+          id === cuenta.id ||
+          cta.mesaId === mesaId ||
+          (cta.numeroMesa === mesa.numero && cta.nombreMesa === mesa.nombre)
+        ) {
+          delete cuentasCopia[id];
+        }
+      }
+      setCuentasActivas(cuentasCopia);
+
+      const mesasCopia = mesas.map((m) =>
+        m.id === mesaId
+          ? {
+              ...m,
+              estado: 'libre' as EstadoMesa,
+              cuentaActivaId: null,
+              horaApertura: null,
+              totalParcial: 0,
+              meseroAsignado: undefined,
+            }
+          : m
+      );
+      setMesas(mesasCopia);
+
+      // Sincronizar cobro a todas las tablets de meseros y caja
+      servicioSincronizacion.emitir('CUENTA_COBRADA', {
+        mesas: mesasCopia,
+        cuentasActivas: cuentasCopia,
+        corteActual: corteActualizado,
+        cuentaCerrada,
+      });
+
+      servicioSupabase.guardarCuentaIndividual(cuentaCerrada).catch(console.error);
+      servicioSupabase.cancelarCuentasDeMesaRemota(mesa.id, mesa.numero).catch(console.error);
+      servicioSupabase.guardarCuentas(cuentasCopia).catch(console.error);
+      servicioSupabase.guardarMesas(mesasCopia).catch(console.error);
+      servicioSupabase.guardarCorte(corteActualizado).catch(console.error);
+
+      return { exito: true, cambio, cuentaCerrada };
+    },
+    [mesas, cuentasActivas, corteActual]
+  );
+
+  const liberarMesaManual = useCallback(
+    (mesaId: string): void => {
+      const mesa = mesas.find(
+        (m) =>
+          m.id === mesaId ||
+          (m.area === 'mesa' && `mesa-${m.numero}` === mesaId) ||
+          (m.area === 'domicilio' && `domicilio-${m.numero}` === mesaId)
+      );
+      if (!mesa) return;
+
+      const idCuentaACancelar = mesa.cuentaActivaId;
+      const cuentasCopia = { ...cuentasActivas };
+
+      // Purgar todas las cuentas de esta mesa (incluyendo huérfanas residuales)
+      for (const [id, cta] of Object.entries(cuentasCopia)) {
+        if (
+          id === idCuentaACancelar ||
+          cta.mesaId === mesa.id ||
+          cta.mesaId === mesaId ||
+          (cta.numeroMesa === mesa.numero && cta.nombreMesa === mesa.nombre)
+        ) {
+          delete cuentasCopia[id];
+        }
+      }
+
+      // Al liberar una mesa manualmente, marcamos sus pedidos pendientes como entregados
+      // para retirarlos de la pantalla de preparación, pero sin eliminarlos del historial de comandas
+      setPedidosCocina((prev) => {
+        const actualizados = prev.map((p) =>
+          (p.mesaId === mesa.id || p.mesaId === mesaId) && p.estado !== 'entregado'
+            ? { ...p, estado: 'entregado' as EstadoPedidoCocina }
+            : p
+        );
+        RepositorioStorage.guardarPedidosCocina(actualizados);
+        return actualizados;
+      });
+
+      const mesasCopia = mesas.map((m) =>
+        m.id === mesa.id || (m.area === mesa.area && m.numero === mesa.numero)
+          ? {
+              ...m,
+              estado: 'libre' as EstadoMesa,
+              cuentaActivaId: null,
+              horaApertura: null,
+              totalParcial: 0,
+              meseroAsignado: undefined,
+            }
+          : m
+      );
+
+      const saneadas = deduplicarYSanearMesas(mesasCopia);
+
+      setCuentasActivas(cuentasCopia);
+      RepositorioStorage.guardarCuentasActivas(cuentasCopia);
+
+      setMesas(saneadas);
+      RepositorioStorage.guardarMesas(saneadas);
+
+      if (mesaSeleccionadaId === mesaId || mesaSeleccionadaId === mesa.id) {
+        setMesaSeleccionadaId(null);
+        setTicketImpresion(null);
+      }
+
+      // Emitir sincronización a las demás terminales
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: saneadas,
+        cuentasActivas: cuentasCopia,
+      });
+
+      // Limpiar y liberar de forma atómica en Supabase
+      servicioSupabase.liberarMesaRemota(mesa.id, mesa.numero).catch(console.error);
+      if (idCuentaACancelar) {
+        servicioSupabase.cancelarCuentaRemota(idCuentaACancelar).catch(console.error);
+      }
+      servicioSupabase.guardarMesas(saneadas).catch(console.error);
+    },
+    [mesas, cuentasActivas, mesaSeleccionadaId]
+  );
+
+  const agregarMesa = useCallback(
+    (capacidad = 4): Mesa => {
+      const mesasComedor = mesas.filter((m) => m.area === 'mesa');
+      const maxNumero =
+        mesasComedor.length > 0 ? Math.max(...mesasComedor.map((m) => m.numero)) : 0;
+      const nuevoNumero = maxNumero + 1;
+      const nuevaMesa: Mesa = {
+        id: `mesa-${nuevoNumero}-${Date.now()}`,
+        numero: nuevoNumero,
+        nombre: `Mesa ${nuevoNumero}`,
+        area: 'mesa',
+        capacidad,
+        estado: 'libre',
+        cuentaActivaId: null,
+        horaApertura: null,
+        totalParcial: 0,
+      };
+
+      const nuevasMesas = [...mesas, nuevaMesa];
+      setMesas(nuevasMesas);
+
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: nuevasMesas,
+        cuentasActivas,
+      });
+
+      servicioSupabase.guardarMesas(nuevasMesas).catch(console.error);
+
+      return nuevaMesa;
+    },
+    [mesas, cuentasActivas]
+  );
+
+  const eliminarMesa = useCallback(
+    (mesaId?: string): { exito: boolean; mensaje: string } => {
+      const mesasComedor = mesas.filter((m) => m.area === 'mesa');
+      if (mesasComedor.length === 0) {
+        return { exito: false, mensaje: 'No hay mesas de comedor registradas para eliminar.' };
+      }
+
+      // Si no se indica mesaId, se toma la última mesa registrada
+      const mesaAEliminar = mesaId
+        ? mesasComedor.find((m) => m.id === mesaId)
+        : mesasComedor[mesasComedor.length - 1];
+
+      if (!mesaAEliminar) {
+        return { exito: false, mensaje: 'No se encontró la mesa a eliminar.' };
+      }
+
+      if (mesaAEliminar.estado !== 'libre' || mesaAEliminar.cuentaActivaId) {
+        return {
+          exito: false,
+          mensaje: `No se puede eliminar "${mesaAEliminar.nombre}" porque se encuentra ${mesaAEliminar.estado.toUpperCase()}. Cobre o libere la mesa primero.`,
+        };
+      }
+
+      const nuevasMesas = mesas.filter((m) => m.id !== mesaAEliminar.id);
+      setMesas(nuevasMesas);
+
+      if (mesaSeleccionadaId === mesaAEliminar.id) {
+        setMesaSeleccionadaId(null);
+      }
+
+      servicioSincronizacion.emitir('MESA_ELIMINADA', {
+        mesaId: mesaAEliminar.id,
+      });
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: nuevasMesas,
+        cuentasActivas,
+      });
+
+      servicioSupabase.eliminarMesaRemota(mesaAEliminar.id).catch(console.error);
+
+      return {
+        exito: true,
+        mensaje: `Se eliminó "${mesaAEliminar.nombre}" exitosamente.`,
+      };
+    },
+    [mesas, cuentasActivas, mesaSeleccionadaId]
+  );
+
+  const agregarDomicilio = useCallback((): Mesa => {
+    const pedidosDomicilio = mesas.filter((m) => m.area === 'domicilio');
+    const maxNumero =
+      pedidosDomicilio.length > 0 ? Math.max(...pedidosDomicilio.map((m) => m.numero)) : 200;
+    const nuevoNumero = maxNumero + 1;
+    const correlativo = pedidosDomicilio.length + 1;
+
+    const nuevoPedido: Mesa = {
+      id: `domicilio-${nuevoNumero}-${Date.now()}`,
+      numero: nuevoNumero,
+      nombre: `Domicilio ${correlativo}`,
+      area: 'domicilio',
+      capacidad: 1,
+      estado: 'libre',
+      cuentaActivaId: null,
+      horaApertura: null,
+      totalParcial: 0,
+    };
+
+    const nuevasMesas = [...mesas, nuevoPedido];
+    setMesas(nuevasMesas);
+    RepositorioStorage.guardarMesas(nuevasMesas);
+
+    servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+      mesas: nuevasMesas,
+      cuentasActivas,
+    });
+
+    servicioSupabase.guardarMesas(nuevasMesas).catch(console.error);
+
+    return nuevoPedido;
+  }, [mesas, cuentasActivas]);
+
+  const eliminarDomicilio = useCallback(
+    (mesaId?: string): { exito: boolean; mensaje: string } => {
+      const pedidosDomicilio = mesas.filter((m) => m.area === 'domicilio');
+      if (pedidosDomicilio.length === 0) {
+        return { exito: false, mensaje: 'No hay pedidos a domicilio registrados para eliminar.' };
+      }
+
+      const pedidoAEliminar = mesaId
+        ? pedidosDomicilio.find((m) => m.id === mesaId)
+        : pedidosDomicilio[pedidosDomicilio.length - 1];
+
+      if (!pedidoAEliminar) {
+        return { exito: false, mensaje: 'No se encontró el pedido a domicilio a eliminar.' };
+      }
+
+      if (pedidoAEliminar.estado !== 'libre' || pedidoAEliminar.cuentaActivaId) {
+        return {
+          exito: false,
+          mensaje: `No se puede eliminar "${pedidoAEliminar.nombre}" porque tiene una comanda activa. Cobre o libere el pedido primero.`,
+        };
+      }
+
+      const nuevasMesas = mesas.filter((m) => m.id !== pedidoAEliminar.id);
+      setMesas(nuevasMesas);
+      RepositorioStorage.guardarMesas(nuevasMesas);
+
+      if (mesaSeleccionadaId === pedidoAEliminar.id) {
+        setMesaSeleccionadaId(null);
+      }
+
+      servicioSincronizacion.emitir('MESA_ELIMINADA', {
+        mesaId: pedidoAEliminar.id,
+      });
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: nuevasMesas,
+        cuentasActivas,
+      });
+
+      servicioSupabase.eliminarMesaRemota(pedidoAEliminar.id).catch(console.error);
+
+      return {
+        exito: true,
+        mensaje: `Se eliminó "${pedidoAEliminar.nombre}" exitosamente.`,
+      };
+    },
+    [mesas, cuentasActivas, mesaSeleccionadaId]
+  );
+
+  const imprimirTicket = useCallback(
+    (tipo: 'cocina' | 'cliente', cuentaEspecifica?: Cuenta): void => {
+      const cuentaAImprimir = cuentaEspecifica ?? cuentaActiva;
+      if (!cuentaAImprimir) return;
+      setTicketImpresion({ cuenta: cuentaAImprimir, tipo });
+    },
+    [cuentaActiva]
+  );
+
+  const cerrarTicketImpresion = useCallback((): void => {
+    setTicketImpresion(null);
+  }, []);
+
+  const reiniciarTurnoActual = useCallback(
+    (pinIngresado: string): boolean => {
+      if (pinIngresado !== corteActual.pinSeguridad) {
+        return false;
+      }
+      // 1. Archivar el turno cerrado y generar nuevo corte limpio
+      const { nuevoCorte, turnoCerrado } = RepositorioStorage.archivarTurnoYCerrar(
+        corteActual,
+        cuentasCerradas,
+        pinIngresado,
+        pedidosCocina
+      );
+
+      setCorteActual(nuevoCorte);
+      setHistorialTurnos((prev) => [turnoCerrado, ...prev.filter((t) => t.id !== turnoCerrado.id)]);
+      setCuentasCerradas([]);
+      setPedidosCocina([]);
+      RepositorioStorage.guardarPedidosCocina([]);
+
+      // 2. Reiniciar integralmente todas las ventas: liberar mesas a 'libre' y vaciar cuentas activas
+      const mesasLiberadas = mesas.map((m) => ({
+        ...m,
+        estado: 'libre' as EstadoMesa,
+        cuentaActivaId: null,
+        horaApertura: null,
+        totalParcial: 0,
+        meseroAsignado: undefined,
+      }));
+      const mesasSaneadas = deduplicarYSanearMesas(mesasLiberadas);
+      setMesas(mesasSaneadas);
+      RepositorioStorage.guardarMesas(mesasSaneadas);
+
+      const cuentasVacias: Record<string, Cuenta> = {};
+      setCuentasActivas(cuentasVacias);
+      RepositorioStorage.guardarCuentasActivas(cuentasVacias);
+      setMesaSeleccionadaId(null);
+
+      // 3. Emitir evento TURNO_REINICIADO a todas las terminales
+      servicioSincronizacion.emitir('TURNO_REINICIADO', {
+        corteActual: nuevoCorte,
+        turnoCerrado,
+        mesas: mesasSaneadas,
+        cuentasActivas: cuentasVacias,
+      });
+
+      // 4. Persistir estado limpio en Supabase
+      servicioSupabase.guardarCorte(turnoCerrado).catch(console.error);
+      servicioSupabase.guardarCorte(nuevoCorte).catch(console.error);
+      servicioSupabase.guardarMesas(mesasSaneadas).catch(console.error);
+      servicioSupabase.cancelarTodasLasCuentasAbiertasRemotas().catch(console.error);
+      servicioSupabase.cancelarTodosLosPedidosCocinaPendientesRemotos().catch(console.error);
+      setTicketImpresion(null);
+
+      return true;
+    },
+    [corteActual, cuentasCerradas, mesas, pedidosCocina]
+  );
+
+  const value = useMemo<RestauranteContextType>(
+    () => ({
+      mesas,
+      mesaSeleccionada,
+      cuentaActiva,
+      corteActual,
+      cuentasCerradas,
+      historialTurnos,
+      pedidosCocina,
+      vistaActual,
+      estaEnLinea,
+      dispositivosConectados,
+      ticketImpresion,
+      meseroActual,
+      tema,
+      nivelOroLiquido,
+      parametrosOro,
+      setNivelOroLiquido,
+      alternarTema,
+      setVistaActual,
+      setMeseroActual,
+      seleccionarMesa,
+      abrirMesa,
+      cambiarEstadoMesa,
+      agregarProductoAComanda,
+      modificarCantidadItem,
+      eliminarItemComanda,
+      solicitarCuenta,
+      cerrarYCobrarCuenta,
+      liberarMesaManual,
+      agregarMesa,
+      eliminarMesa,
+      agregarDomicilio,
+      eliminarDomicilio,
+      imprimirTicket,
+      cerrarTicketImpresion,
+      reiniciarTurnoActual,
+      cargarHistorialTurnos,
+      enviarComandaACocina,
+      cambiarEstadoPedidoCocina,
+      alternarItemCompletadoCocina,
+    }),
+    [
+      mesas,
+      mesaSeleccionada,
+      cuentaActiva,
+      corteActual,
+      cuentasCerradas,
+      historialTurnos,
+      pedidosCocina,
+      vistaActual,
+      estaEnLinea,
+      dispositivosConectados,
+      ticketImpresion,
+      meseroActual,
+      tema,
+      nivelOroLiquido,
+      parametrosOro,
+      setNivelOroLiquido,
+      alternarTema,
+      seleccionarMesa,
+      abrirMesa,
+      cambiarEstadoMesa,
+      agregarProductoAComanda,
+      modificarCantidadItem,
+      eliminarItemComanda,
+      solicitarCuenta,
+      cerrarYCobrarCuenta,
+      liberarMesaManual,
+      agregarMesa,
+      eliminarMesa,
+      agregarDomicilio,
+      eliminarDomicilio,
+      imprimirTicket,
+      cerrarTicketImpresion,
+      reiniciarTurnoActual,
+      cargarHistorialTurnos,
+      enviarComandaACocina,
+      cambiarEstadoPedidoCocina,
+      alternarItemCompletadoCocina,
+    ]
+  );
+
+  return <RestauranteContext.Provider value={value}>{children}</RestauranteContext.Provider>;
+};
+
+export const useRestaurante = (): RestauranteContextType => {
+  const context = useContext(RestauranteContext);
+  if (!context) {
+    throw new Error('useRestaurante debe ser utilizado dentro de un RestauranteProvider');
+  }
+  return context;
+};

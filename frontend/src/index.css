@@ -1,0 +1,355 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-rustico-fondo: #0d0c0a;
+    --color-rustico-tarjeta: #171512;
+    --color-rustico-borde: #3d3423;
+    --color-madera-oscura: #1f1a14;
+    --color-madera-clara: #78350f;
+    --color-fuego: #d4af37;
+    --color-fuego-intenso: #b8860b;
+    --color-oro: #d4af37;
+    --color-oro-brillante: #f59e0b;
+    --color-maiz: #facc15;
+    --color-cilantro: #16a34a;
+    --color-crema: #faf6f0;
+
+    /* Detección y márgenes de seguridad para Notch / Orificio de Cámara / Gesture Bar */
+    --notch-top: 0px;
+    --notch-bottom: 0px;
+    --notch-left: 0px;
+    --notch-right: 0px;
+
+    --safe-top: max(var(--notch-top, 0px), env(safe-area-inset-top, 0px));
+    --safe-bottom: max(var(--notch-bottom, 0px), env(safe-area-inset-bottom, 0px));
+    --safe-left: max(var(--notch-left, 0px), env(safe-area-inset-left, 0px));
+    --safe-right: max(var(--notch-right, 0px), env(safe-area-inset-right, 0px));
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: touch;
+    background-color: #0d0c0a;
+    color: #faf6f0;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.tema-claro,
+  html.tema-claro body {
+    background-color: #f7f6f2;
+    color: #171512;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+html.tema-claro ::-webkit-scrollbar-track {
+  background: #e7e5e4;
+}
+
+html.tema-claro ::-webkit-scrollbar-thumb {
+  background: #a8a29e;
+}
+
+html.tema-claro ::-webkit-scrollbar-thumb:hover {
+  background: #d4af37;
+}
+
+/* Efectos visuales de lujo y sombras doradas */
+.sombra-brasa,
+.sombra-dorada {
+  box-shadow: 0 4px 20px -2px rgba(212, 175, 55, 0.28);
+}
+
+.sombra-brasa-intensa,
+.sombra-dorada-intensa {
+  box-shadow: 0 0 25px rgba(212, 175, 55, 0.45);
+}
+
+.borde-madera {
+  border: 1px solid rgba(212, 175, 55, 0.3);
+}
+
+/* Animación de Oro Líquido Fundido / Mercurio Dorado Reflectante para pequeños detalles */
+@keyframes mercurio-oro-liquido {
+  0%, 100% {
+    opacity: 0.92;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+.oro-liquido-detalle {
+  background: radial-gradient(circle at 35% 35%, #fff6b7 0%, #f59e0b 30%, #d4af37 55%, #78350f 80%, #fef08a 100%);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.6), 0 2px 10px rgba(212, 175, 55, 0.35);
+  animation: mercurio-oro-liquido 5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.borde-oro-liquido {
+  border: 1.5px solid #d4af37;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
+}
+
+/* Bordes y Cintas de Oro Líquido: Aceleradas 100% por GPU mediante Transform (Compositor Thread) */
+@keyframes flujo-cinta-gpu {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* Cinta continua bajo la barra superior */
+.cinta-oro-liquido-unificada {
+  overflow: hidden;
+  box-shadow: 0 1px 12px rgba(212, 175, 55, 0.55);
+}
+
+.cinta-oro-liquido-unificada::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    #78350f 0%,
+    #d4af37 15%,
+    #fff3a1 30%,
+    #f59e0b 50%,
+    #b45309 70%,
+    #fef08a 85%,
+    #78350f 100%
+  );
+  animation: flujo-cinta-gpu var(--duracion-flujo-oro, 6s) linear infinite;
+  will-change: transform;
+}
+
+/* Botón y Pestaña con Relleno de Oro Metálico Satinado */
+.boton-oro-liquido {
+  background: linear-gradient(
+    135deg,
+    #f59e0b 0%,
+    #fef08a 25%,
+    #d4af37 55%,
+    #b45309 85%,
+    #f59e0b 100%
+  );
+  color: #0c0a09 !important;
+  font-weight: 900 !important;
+  border: 1px solid rgba(254, 240, 138, 0.8) !important;
+  box-shadow: 0 2px 10px rgba(212, 175, 55, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.boton-oro-liquido:hover {
+  filter: brightness(1.08);
+}
+
+.tarjeta-borde-oro-liquido {
+  position: relative;
+  border: 1.5px solid #d4af37;
+  box-shadow: 0 0 16px -1px rgba(212, 175, 55, 0.45);
+}
+
+/* Modo Apagado: Color amarillo ámbar sólido estático sin ninguna animación */
+[data-nivel-oro="apagado"] .cinta-oro-liquido-unificada {
+  background: #f59e0b !important;
+  background-image: none !important;
+  animation: none !important;
+  box-shadow: 0 1px 8px rgba(245, 158, 11, 0.45) !important;
+}
+
+[data-nivel-oro="apagado"] .tarjeta-borde-oro-liquido {
+  background: #f59e0b !important;
+  background-image: none !important;
+  animation: none !important;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35) !important;
+}
+
+[data-nivel-oro="apagado"] .oro-liquido-detalle {
+  background: #f59e0b !important;
+  animation: none !important;
+}
+
+.tarjeta-borde-azul-liquido {
+  position: relative;
+  border: 1.5px solid #3b82f6;
+  box-shadow: 0 0 16px -1px rgba(59, 130, 246, 0.5);
+}
+
+.tarjeta-borde-cyan-liquido {
+  position: relative;
+  border: 1.5px solid #06b6d4;
+  box-shadow: 0 0 16px -1px rgba(6, 182, 212, 0.45);
+}
+
+.bg-gradiente-dorado-animado {
+  background: linear-gradient(
+    135deg,
+    #d4af37 0%,
+    #fef08a 30%,
+    #f59e0b 60%,
+    #b45309 85%,
+    #d4af37 100%
+  );
+}
+
+@keyframes entrada-modal-suave {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.anim-entrada-modal {
+  animation: entrada-modal-suave 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes destello-dorado-agregado {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.8);
+  }
+  70% {
+    transform: scale(1.02);
+    box-shadow: 0 0 20px 4px rgba(212, 175, 55, 0.4);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0);
+  }
+}
+
+.anim-destello-dorado {
+  animation: destello-dorado-agregado 0.4s ease-out;
+}
+
+.tarjeta-tactil-suave {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s ease-out;
+}
+.tarjeta-tactil-suave:active {
+  transform: scale(0.97);
+}
+
+@keyframes resplandor-dorado {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(212, 175, 55, 0.2);
+    border-color: rgba(212, 175, 55, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(212, 175, 55, 0.45);
+    border-color: rgba(212, 175, 55, 0.8);
+  }
+}
+
+.animacion-dorada-elegante {
+  animation: resplandor-dorado 2.5s infinite ease-in-out;
+}
+
+/* Animación sutil para mesas que solicitan cuenta */
+@keyframes pulso-cobro {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 15px rgba(212, 175, 55, 0.6);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.015);
+    box-shadow: 0 0 25px rgba(212, 175, 55, 0.9);
+  }
+}
+
+.animacion-por-cobrar {
+  animation: pulso-cobro 1.8s infinite ease-in-out;
+}
+
+/* Barra de desplazamiento ergonómica para tablets */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #171512;
+}
+::-webkit-scrollbar-thumb {
+  background: #3d3423;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d4af37;
+}
+
+/* Reglas específicas para navegadores iOS / WebKit (Safari, WKWebView) */
+@supports (-webkit-touch-callout: none) {
+  /* Evita el zoom automático involuntario al enfocar campos de texto en iPhones */
+  input[type="text"],
+  input[type="number"],
+  input[type="search"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Estilos de impresión térmica compatibles con AirPrint y navegadores móviles */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #ticket-imprimible,
+  #ticket-imprimible * {
+    visibility: visible;
+  }
+
+  #ticket-imprimible {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 8px !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

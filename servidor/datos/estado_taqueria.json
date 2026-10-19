@@ -1,0 +1,431 @@
+{
+  "mesas": [
+    {
+      "id": "mesa-1",
+      "numero": 1,
+      "nombre": "Mesa 1",
+      "area": "mesa",
+      "capacidad": 4,
+      "estado": "por_cobrar",
+      "cuentaActivaId": "cuenta-1792023948391-1",
+      "horaApertura": "2026-10-15T00:25:48.391Z",
+      "totalParcial": 140,
+      "meseroAsignado": "Beto (Mesero)"
+    },
+    {
+      "id": "mesa-2",
+      "numero": 2,
+      "nombre": "Mesa 2",
+      "area": "mesa",
+      "capacidad": 4,
+      "estado": "ocupada",
+      "cuentaActivaId": "cuenta-1792023992556-2",
+      "horaApertura": "2026-10-15T00:26:32.556Z",
+      "totalParcial": 135,
+      "meseroAsignado": "Beto (Mesero)"
+    },
+    {
+      "id": "mesa-3",
+      "numero": 3,
+      "nombre": "Mesa 3",
+      "area": "mesa",
+      "capacidad": 4,
+      "estado": "ocupada",
+      "cuentaActivaId": "cuenta-1792024018250-3",
+      "horaApertura": "2026-10-15T00:26:58.250Z",
+      "totalParcial": 165,
+      "meseroAsignado": "Beto (Mesero)"
+    },
+    {
+      "id": "mesa-4",
+      "numero": 4,
+      "nombre": "Mesa 4",
+      "area": "mesa",
+      "capacidad": 6,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "mesa-5",
+      "numero": 5,
+      "nombre": "Mesa 5",
+      "area": "mesa",
+      "capacidad": 6,
+      "estado": "ocupada",
+      "cuentaActivaId": "cuenta-1792024024952-5",
+      "horaApertura": "2026-10-15T00:27:04.952Z",
+      "totalParcial": 135,
+      "meseroAsignado": "Beto (Mesero)"
+    },
+    {
+      "id": "mesa-6",
+      "numero": 6,
+      "nombre": "Mesa 6",
+      "area": "mesa",
+      "capacidad": 4,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "mesa-7",
+      "numero": 7,
+      "nombre": "Mesa 7",
+      "area": "mesa",
+      "capacidad": 4,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "mesa-8",
+      "numero": 8,
+      "nombre": "Mesa 8",
+      "area": "mesa",
+      "capacidad": 8,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "mesa-9",
+      "numero": 9,
+      "nombre": "Mesa 9",
+      "area": "mesa",
+      "capacidad": 4,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "mesa-10",
+      "numero": 10,
+      "nombre": "Mesa 10",
+      "area": "mesa",
+      "capacidad": 4,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "mesa-11",
+      "numero": 11,
+      "nombre": "Mesa 11",
+      "area": "mesa",
+      "capacidad": 6,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "mesa-12",
+      "numero": 12,
+      "nombre": "Mesa 12",
+      "area": "mesa",
+      "capacidad": 8,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "barra-1",
+      "numero": 13,
+      "nombre": "Barra 1",
+      "area": "mesa",
+      "capacidad": 2,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "barra-2",
+      "numero": 14,
+      "nombre": "Barra 2",
+      "area": "mesa",
+      "capacidad": 2,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "barra-3",
+      "numero": 15,
+      "nombre": "Barra 3",
+      "area": "mesa",
+      "capacidad": 2,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "llevar-1",
+      "numero": 16,
+      "nombre": "Para Llevar 1",
+      "area": "para_llevar",
+      "capacidad": 1,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "llevar-2",
+      "numero": 17,
+      "nombre": "Para Llevar 2",
+      "area": "para_llevar",
+      "capacidad": 1,
+      "estado": "libre",
+      "cuentaActivaId": null,
+      "horaApertura": null,
+      "totalParcial": 0
+    },
+    {
+      "id": "domicilio-201-1792023928939",
+      "numero": 201,
+      "nombre": "Domicilio 1",
+      "area": "domicilio",
+      "capacidad": 1,
+      "estado": "ocupada",
+      "cuentaActivaId": "cuenta-1792023930229-201",
+      "horaApertura": "2026-10-15T00:25:30.229Z",
+      "totalParcial": 135,
+      "meseroAsignado": "Beto (Mesero)"
+    }
+  ],
+  "cuentasActivas": {
+    "cuenta-1792023930229-201": {
+      "id": "cuenta-1792023930229-201",
+      "mesaId": "domicilio-201-1792023928939",
+      "numeroMesa": 201,
+      "nombreMesa": "Domicilio 1",
+      "items": [
+        {
+          "id": "item-1792023934312-jb1by",
+          "productoId": "prod-taco-bistec",
+          "nombre": "Tacos de Bistec al Carbón (Orden 5)",
+          "precioUnitario": 135,
+          "cantidad": 1,
+          "notas": "",
+          "modificadoresSeleccionados": [],
+          "fechaAgregado": "2026-10-15T00:25:34.312Z"
+        }
+      ],
+      "subtotal": 135,
+      "descuento": 0,
+      "propina": 0,
+      "total": 135,
+      "estado": "abierta",
+      "horaApertura": "2026-10-15T00:25:30.229Z",
+      "horaCierre": null,
+      "mesero": "Beto (Mesero)"
+    },
+    "cuenta-1792023948391-1": {
+      "id": "cuenta-1792023948391-1",
+      "mesaId": "mesa-1",
+      "numeroMesa": 1,
+      "nombreMesa": "Mesa 1",
+      "items": [
+        {
+          "id": "item-1792023950263-bamaz",
+          "productoId": "prod-taco-tripita",
+          "nombre": "Tacos de Tripita de Leche (Orden 5)",
+          "precioUnitario": 140,
+          "cantidad": 1,
+          "notas": "",
+          "modificadoresSeleccionados": [],
+          "fechaAgregado": "2026-10-15T00:25:50.263Z"
+        }
+      ],
+      "subtotal": 140,
+      "descuento": 0,
+      "propina": 0,
+      "total": 140,
+      "estado": "abierta",
+      "horaApertura": "2026-10-15T00:25:48.391Z",
+      "horaCierre": null,
+      "mesero": "Beto (Mesero)"
+    },
+    "cuenta-1792023992556-2": {
+      "id": "cuenta-1792023992556-2",
+      "mesaId": "mesa-2",
+      "numeroMesa": 2,
+      "nombreMesa": "Mesa 2",
+      "items": [
+        {
+          "id": "item-1792023993798-a1en6",
+          "productoId": "prod-taco-bistec",
+          "nombre": "Tacos de Bistec al Carbón (Orden 5)",
+          "precioUnitario": 135,
+          "cantidad": 1,
+          "notas": "",
+          "modificadoresSeleccionados": [],
+          "fechaAgregado": "2026-10-15T00:26:33.798Z"
+        }
+      ],
+      "subtotal": 135,
+      "descuento": 0,
+      "propina": 0,
+      "total": 135,
+      "estado": "abierta",
+      "horaApertura": "2026-10-15T00:26:32.556Z",
+      "horaCierre": null,
+      "mesero": "Beto (Mesero)"
+    },
+    "cuenta-1792024018250-3": {
+      "id": "cuenta-1792024018250-3",
+      "mesaId": "mesa-3",
+      "numeroMesa": 3,
+      "nombreMesa": "Mesa 3",
+      "items": [
+        {
+          "id": "item-1792024020003-xi11q",
+          "productoId": "prod-taco-arrachera",
+          "nombre": "Tacos de Arrachera Marinada (Orden 4)",
+          "precioUnitario": 165,
+          "cantidad": 1,
+          "notas": "",
+          "modificadoresSeleccionados": [],
+          "fechaAgregado": "2026-10-15T00:27:00.003Z"
+        }
+      ],
+      "subtotal": 165,
+      "descuento": 0,
+      "propina": 0,
+      "total": 165,
+      "estado": "abierta",
+      "horaApertura": "2026-10-15T00:26:58.250Z",
+      "horaCierre": null,
+      "mesero": "Beto (Mesero)"
+    },
+    "cuenta-1792024024952-5": {
+      "id": "cuenta-1792024024952-5",
+      "mesaId": "mesa-5",
+      "numeroMesa": 5,
+      "nombreMesa": "Mesa 5",
+      "items": [
+        {
+          "id": "item-1792024029861-hpy3s",
+          "productoId": "prod-taco-bistec",
+          "nombre": "Tacos de Bistec al Carbón (Orden 5)",
+          "precioUnitario": 135,
+          "cantidad": 1,
+          "notas": "asdadasda",
+          "modificadoresSeleccionados": [],
+          "fechaAgregado": "2026-10-15T00:27:09.861Z"
+        }
+      ],
+      "subtotal": 135,
+      "descuento": 0,
+      "propina": 0,
+      "total": 135,
+      "estado": "abierta",
+      "horaApertura": "2026-10-15T00:27:04.952Z",
+      "horaCierre": null,
+      "mesero": "Beto (Mesero)"
+    }
+  },
+  "cuentasCerradas": [],
+  "pedidosCocina": [
+    {
+      "id": "ped-1792024030761-5",
+      "comandaId": "cuenta-1792024024952-5",
+      "mesaId": "mesa-5",
+      "nombreMesa": "Mesa 5",
+      "mesero": "Beto (Mesero)",
+      "horaEnvio": "2026-10-15T00:27:10.761Z",
+      "items": [
+        {
+          "id": "item-1792024029861-hpy3s",
+          "nombre": "Tacos de Bistec al Carbón (Orden 5)",
+          "cantidad": 1,
+          "notas": "asdadasda",
+          "modificadores": [],
+          "completado": false
+        }
+      ],
+      "estado": "pendiente"
+    },
+    {
+      "id": "ped-1792024020687-3",
+      "comandaId": "cuenta-1792024018250-3",
+      "mesaId": "mesa-3",
+      "nombreMesa": "Mesa 3",
+      "mesero": "Beto (Mesero)",
+      "horaEnvio": "2026-10-15T00:27:00.687Z",
+      "items": [
+        {
+          "id": "item-1792024020003-xi11q",
+          "nombre": "Tacos de Arrachera Marinada (Orden 4)",
+          "cantidad": 1,
+          "notas": "",
+          "modificadores": [],
+          "completado": false
+        }
+      ],
+      "estado": "pendiente"
+    },
+    {
+      "id": "ped-1792023994762-2",
+      "comandaId": "cuenta-1792023992556-2",
+      "mesaId": "mesa-2",
+      "nombreMesa": "Mesa 2",
+      "mesero": "Beto (Mesero)",
+      "horaEnvio": "2026-10-15T00:26:34.762Z",
+      "items": [
+        {
+          "id": "item-1792023993798-a1en6",
+          "nombre": "Tacos de Bistec al Carbón (Orden 5)",
+          "cantidad": 1,
+          "notas": "",
+          "modificadores": [],
+          "completado": false
+        }
+      ],
+      "estado": "entregado"
+    },
+    {
+      "id": "ped-1792023935333-201",
+      "comandaId": "cuenta-1792023930229-201",
+      "mesaId": "domicilio-201-1792023928939",
+      "nombreMesa": "Domicilio 1",
+      "mesero": "Beto (Mesero)",
+      "horaEnvio": "2026-10-15T00:25:35.333Z",
+      "items": [
+        {
+          "id": "item-1792023934312-jb1by",
+          "nombre": "Tacos de Bistec al Carbón (Orden 5)",
+          "cantidad": 1,
+          "notas": "",
+          "modificadores": [],
+          "completado": false
+        }
+      ],
+      "estado": "entregado"
+    }
+  ],
+  "corteActual": {
+    "id": "corte-1792023622013",
+    "fechaApertura": "2026-10-15T00:20:22.013Z",
+    "fechaCierre": null,
+    "totalVentas": 0,
+    "totalEfectivo": 0,
+    "totalTarjeta": 0,
+    "totalTransferencia": 0,
+    "cuentasCobradasCount": 0,
+    "ticketPromedio": 0,
+    "estaAbierto": true,
+    "pinSeguridad": "2430"
+  }
+}
