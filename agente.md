@@ -1280,6 +1280,30 @@
   - Script automatizado: `frontend/compilar_terminal_apk.ps1` (`pnpm run build:apk:terminal`).
   - APK generado: [`d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk`](file:///d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk) (7.38 MB).
 
-
-
-
+## 21. Respeto al Notch, Presencia en Vivo Multidispositivo y Telemetría Proactiva
+- **Requerimientos del Usuario:**
+  1. *"Tiene para actualizar automaticamente?"*
+  2. *"Haz que respete el notch"*
+  3. *"No aparecen dispositivos conectados, asi que no esta recibiendo datos de la app/pagina https://laestaciongrill.vercel.app/"*
+- **Causas Raíz Detectadas:**
+  1. **Notch:** `visor-logs` carecía de padding para `safe-area-inset-top` y de las variables `--notch-top` inyectadas por `MainActivity.kt`.
+  2. **Dispositivos no visibles en la Terminal:**
+     - `estadisticas.dispositivosUnicos` solo contabilizaba los IDs presentes en los logs descargados. Si no había errores ocurridos recientemente, la tabla estaba vacía y mostraba 0 dispositivos.
+     - La app web de meseros/clientes (`https://laestaciongrill.vercel.app/`) no emitía ningún log de inicio de sesión o presencia al arrancar si no había un crash explícito.
+     - `visor-logs` no estaba suscrito al canal de presencia global `'taqueria-sync-global'` donde los celulares anuncian que están conectados en tiempo real.
+  3. **Auto-actualización de datos:** La carga de logs se ejecutaba una sola vez al montar el componente, sin refresco periódico automático si fallaba el websocket.
+- **Soluciones Implementadas:**
+  1. **Respeto Universal al Notch en la Terminal:**
+     - En `visor-logs/src/index.css`: Declaradas variables seguras `--safe-top: max(var(--notch-top, 0px), env(safe-area-inset-top, 0px))` y márgenes para los 4 costados.
+     - En `visor-logs/src/App.tsx`: Tanto en la pantalla de PIN de login como en el `<header>` y `<main>`, se aplica `style={{ paddingTop: 'max(var(--notch-top, 0px), env(safe-area-inset-top, 0px), 12px)', paddingBottom: 'max(var(--notch-bottom, 0px), env(safe-area-inset-bottom, 0px), 24px)' }}`. El notch, la cámara perforada y la barra gestual inferior quedan 100% protegidos.
+  2. **Detección de Presencia Multidispositivo en Vivo:**
+     - En `visor-logs/src/servicioSupabaseLogs.ts`: Implementado `suscribirPresencia()` escuchando los eventos `'sync'`, `'join'` y `'leave'` en `'taqueria-sync-global'`.
+     - En `visor-logs/src/App.tsx`: Tarjeta KPI de Dispositivos con semáforo verde pulsante indicando cuántas terminales están activas en este segundo exacto y chips interactivos para filtrar rápidamente por cualquier dispositivo en línea.
+  3. **Telemetría Proactiva al Iniciar Sesión en el Frontend:**
+     - En `frontend/src/services/servicioTelemetria.ts`: Constructor configurado para registrar automáticamente un evento `INFO` (`"Dispositivo conectado al restaurante"`) con detalles de plataforma, resolución de pantalla y hora exacta, vaciando de inmediato la cola pendiente de logs.
+  4. **Auto-actualización Continua y OTA:**
+     - En `visor-logs`: Sondeo periódico cada 8 segundos (`setInterval(cargarLogs, 8000)`) con badge visual en el header (`Auto: 8s • HH:MM:SS`).
+     - Creado `visor-logs/src/servicioActualizacionesTerminal.ts` conectado con `AndroidOtaBridge` y Supabase Storage (`terminal-version.json` y `terminal-bundle.zip`), con botón directo "Actualizar App" en el header.
+  5. **Regeneración de APK y Despliegue en la Nube:**
+     - APK de Terminal recompilado: [`TerminalAdmin-v1.0.0.apk`](file:///d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk).
+     - Bundles OTA de Terminal y Restaurante desplegados en Supabase Storage.

@@ -5,6 +5,7 @@ export class ServicioSupabaseLogs {
   private static instancia: ServicioSupabaseLogs | null = null;
   private cliente: SupabaseClient;
   private canal: RealtimeChannel | null = null;
+  private canalPresencia: RealtimeChannel | null = null;
 
   public static readonly URL_PREDETERMINADA =
     (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
@@ -119,6 +120,69 @@ export class ServicioSupabaseLogs {
       if (this.canal) {
         this.cliente.removeChannel(this.canal);
         this.canal = null;
+      }
+    };
+  }
+
+  /**
+   * Suscribe al canal de Presencia global para detectar qué dispositivos están en línea en vivo.
+   */
+  public suscribirPresencia(
+    onPresenciaActualizada: (dispositivosEnLinea: string[]) => void
+  ): () => void {
+    if (this.canalPresencia) {
+      this.cliente.removeChannel(this.canalPresencia);
+      this.canalPresencia = null;
+    }
+
+    const idConsola = `admin-consola-${Date.now().toString(36)}`;
+
+    const actualizarPresencia = (): void => {
+      try {
+        const state = this.canalPresencia?.presenceState() || {};
+        const dispositivos = Object.keys(state).filter(
+          (k) => !k.startsWith('admin-consola')
+        );
+        onPresenciaActualizada(dispositivos);
+      } catch (err: unknown) {
+        console.warn('[Presencia] Error al procesar estado de presencia:', err);
+      }
+    };
+
+    this.canalPresencia = this.cliente
+      .channel('taqueria-sync-global', {
+        config: {
+          presence: {
+            key: idConsola,
+          },
+        },
+      })
+      .on('presence', { event: 'sync' }, () => {
+        actualizarPresencia();
+      })
+      .on('presence', { event: 'join' }, () => {
+        actualizarPresencia();
+      })
+      .on('presence', { event: 'leave' }, () => {
+        actualizarPresencia();
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await this.canalPresencia?.track({
+              rol: 'admin-monitor',
+              conectadoEn: new Date().toISOString(),
+            });
+          } catch {
+            // Ignorar fallas menores de tracking
+          }
+        }
+      });
+
+    return () => {
+      if (this.canalPresencia) {
+        this.cliente.removeChannel(this.canalPresencia);
+        this.canalPresencia = null;
       }
     };
   }

@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+:root {
+  /* Variables de detección para Notch / Cámara frontal / Barra de gestos */
+  --notch-top: 0px;
+  --notch-bottom: 0px;
+  --notch-left: 0px;
+  --notch-right: 0px;
+
+  --safe-top: max(var(--notch-top, 0px), env(safe-area-inset-top, 0px));
+  --safe-bottom: max(var(--notch-bottom, 0px), env(safe-area-inset-bottom, 0px));
+  --safe-left: max(var(--notch-left, 0px), env(safe-area-inset-left, 0px));
+  --safe-right: max(var(--notch-right, 0px), env(safe-area-inset-right, 0px));
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: #0c0a09;
+  color: #fafaf9;
+  width: 100%;
+  height: 100%;
+}
+
 @layer utilities {
   /* Scrollbar personalizado para terminal de logs */
   .custom-scrollbar::-webkit-scrollbar {

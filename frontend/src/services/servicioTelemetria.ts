@@ -24,6 +24,25 @@ export class ServicioTelemetria {
     this.dispositivoId = this.obtenerIdDispositivo();
     this.configurarInterceptoresGlobales();
     this.configurarEventosRed();
+
+    // Procesar cola pendiente inmediatamente tras la inicializacion
+    setTimeout(() => {
+      this.procesarColaPendiente();
+      // Registrar log informativo de dispositivo conectado para que aparezca de inmediato en la terminal
+      this.registrarInfo(`Dispositivo conectado al restaurante`, {
+        tipo: 'inicio_sesion',
+        plataforma: typeof navigator !== 'undefined' ? navigator.platform : 'web',
+        resolucion: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : 'N/A',
+        modoPWA: typeof window !== 'undefined' ? window.matchMedia('(display-mode: standalone)').matches : false,
+      });
+    }, 1500);
+
+    // Latido periodico cada 10s para reintentar el envio si hubo fluctuaciones de conexion
+    if (typeof window !== 'undefined') {
+      setInterval(() => {
+        this.procesarColaPendiente();
+      }, 10000);
+    }
   }
 
   public static obtenerInstancia(): ServicioTelemetria {

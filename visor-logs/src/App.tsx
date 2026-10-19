@@ -20,8 +20,10 @@ import {
   Bell,
   BellOff,
   Tablet,
+  Sparkles,
 } from 'lucide-react';
 import { servicioSupabaseLogs } from './servicioSupabaseLogs';
+import { servicioActualizacionesTerminal } from './servicioActualizacionesTerminal';
 import type { RegistroLog, NivelLog, FiltroLogs, EstadisticasLogs } from './types';
 
 const SQL_ESQUEMA_LOGS = `-- TAQUERÍA KM 243 / LA ESTACIÓN GRILL
@@ -72,7 +74,7 @@ export const App: React.FC = () => {
   const [pinInput, setPinInput] = useState<string>('');
   const [errorPin, setErrorPin] = useState<boolean>(false);
 
-  // Estado de Datos y Tiempo Real
+  // Estado de Datos, Presencia y Tiempo Real
   const [logs, setLogs] = useState<RegistroLog[]>([]);
   const [cargando, setCargando] = useState<boolean>(true);
   const [conectadoRealtime, setConectadoRealtime] = useState<boolean>(false);
@@ -80,6 +82,12 @@ export const App: React.FC = () => {
   const [sonidoHabilitado, setSonidoHabilitado] = useState<boolean>(true);
   const [tablaNoExiste, setTablaNoExiste] = useState<boolean>(false);
   const [mostrarSqlModal, setMostrarSqlModal] = useState<boolean>(false);
+  const [dispositivosEnLinea, setDispositivosEnLinea] = useState<string[]>([]);
+  const [comprobandoOta, setComprobandoOta] = useState<boolean>(false);
+  const [mensajeOta, setMensajeOta] = useState<string | null>(null);
+  const [ultimaSincronizacion, setUltimaSincronizacion] = useState<string>(() =>
+    new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
 
   // Filtros
   const [filtro, setFiltro] = useState<FiltroLogs>({
@@ -132,15 +140,45 @@ export const App: React.FC = () => {
     setTablaNoExiste(false);
     const resultado = await servicioSupabaseLogs.obtenerLogs(400);
     setLogs(resultado.logs);
+    setUltimaSincronizacion(
+      new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    );
     setCargando(false);
   }, []);
+
+  // Comprobar actualización OTA de la aplicación
+  const handleBuscarActualizacionOta = async (): Promise<void> => {
+    setComprobandoOta(true);
+    setMensajeOta('Comprobando actualizaciones en la nube...');
+    try {
+      const res = await servicioActualizacionesTerminal.verificarActualizacion();
+      if (res.hayActualizacion) {
+        setMensajeOta(`¡Actualización v${res.versionRemota} encontrada! Aplicando...`);
+        await servicioActualizacionesTerminal.aplicarActualizacion();
+      } else {
+        setMensajeOta('La Terminal ya tiene la última versión disponible.');
+        setTimeout(() => setMensajeOta(null), 3500);
+      }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Error de conexión';
+      setMensajeOta(`Fallo al verificar: ${errorMsg}`);
+      setTimeout(() => setMensajeOta(null), 3500);
+    } finally {
+      setComprobandoOta(false);
+    }
+  };
 
   useEffect(() => {
     if (!autenticado) return;
     cargarLogs();
 
-    // Suscripción Realtime
-    const desuscribir = servicioSupabaseLogs.suscribirEnVivo(
+    // 1. Suscripción a presencia en tiempo real (dispositivos del restaurante conectados)
+    const desuscribirPresencia = servicioSupabaseLogs.suscribirPresencia((dispositivos) => {
+      setDispositivosEnLinea(dispositivos);
+    });
+
+    // 2. Suscripción a Realtime de logs y crashes
+    const desuscribirLogs = servicioSupabaseLogs.suscribirEnVivo(
       (nuevoLog) => {
         if (!feedPausado) {
           setLogs((prev) => [nuevoLog, ...prev]);
@@ -175,8 +213,20 @@ export const App: React.FC = () => {
       }
     );
 
+    // 3. Sondeo periódico continuo cada 8 segundos para auto-actualizar datos automáticamente
+    const intervaloAutoRefresh = setInterval(() => {
+      if (!feedPausado) {
+        cargarLogs();
+      }
+    }, 8000);
+
+    // 4. Comprobación automática de OTA al iniciar
+    servicioActualizacionesTerminal.verificarYActualizarSilencioso();
+
     return () => {
-      desuscribir();
+      desuscribirPresencia();
+      desuscribirLogs();
+      clearInterval(intervaloAutoRefresh);
     };
   }, [autenticado, cargarLogs, feedPausado, reproducirAlertaCrash]);
 
@@ -200,16 +250,21 @@ export const App: React.FC = () => {
     setPinInput('');
   };
 
-  // Dispositivos únicos detectados para el dropdown
+  // Dispositivos únicos detectados (combina presencia en vivo con historial de logs)
   const dispositivosDisponibles = useMemo(() => {
     const setDisp = new Set<string>();
+    // Agregar primero los que están conectados en vivo
+    for (const d of dispositivosEnLinea) {
+      if (d) setDisp.add(d);
+    }
+    // Agregar los que han reportado logs
     for (const log of logs) {
       if (log.dispositivo_id) {
         setDisp.add(log.dispositivo_id);
       }
     }
     return Array.from(setDisp);
-  }, [logs]);
+  }, [dispositivosEnLinea, logs]);
 
   // Filtrado reactivo de logs
   const logsFiltrados = useMemo(() => {
@@ -275,9 +330,9 @@ export const App: React.FC = () => {
       errores,
       advertencias,
       informativos,
-      dispositivosUnicos: dispositivos.size,
+      dispositivosUnicos: Math.max(dispositivos.size, dispositivosDisponibles.length),
     };
-  }, [logs]);
+  }, [logs, dispositivosDisponibles]);
 
   // Exportar a JSON
   const handleExportarJson = (): void => {
@@ -397,9 +452,19 @@ export const App: React.FC = () => {
   // -------------------------------------------------------------
   // Pantalla de Autenticación Privada
   // -------------------------------------------------------------
+  // Pantalla de Autenticación Privada
+  // -------------------------------------------------------------
   if (!autenticado) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4 bg-stone-950 text-stone-100 font-sans">
+      <div
+        className="min-h-screen w-full flex items-center justify-center p-4 bg-stone-950 text-stone-100 font-sans"
+        style={{
+          paddingTop: 'max(var(--notch-top, 0px), env(safe-area-inset-top, 0px), 16px)',
+          paddingBottom: 'max(var(--notch-bottom, 0px), env(safe-area-inset-bottom, 0px), 16px)',
+          paddingLeft: 'max(var(--notch-left, 0px), env(safe-area-inset-left, 0px), 16px)',
+          paddingRight: 'max(var(--notch-right, 0px), env(safe-area-inset-right, 0px), 16px)',
+        }}
+      >
         <div className="w-full max-w-sm bg-stone-900 border border-stone-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-6">
           <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-stone-950 shadow-lg border border-amber-300">
             <Flame className="w-8 h-8 stroke-[2.5]" />
@@ -463,8 +528,24 @@ export const App: React.FC = () => {
   // -------------------------------------------------------------
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#0d0c0a] text-stone-100 font-sans select-none antialiased">
-      {/* Barra de Navegación Superior */}
-      <header className="sticky top-0 z-40 bg-stone-900/90 backdrop-blur-md border-b border-stone-800/80 px-4 sm:px-6 py-3 flex items-center justify-between">
+      {/* Toast informativo de Actualización OTA */}
+      {mensajeOta && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-amber-500 text-stone-950 rounded-full shadow-2xl text-xs font-bold flex items-center gap-2 animate-bounce">
+          <Sparkles className="w-4 h-4" />
+          <span>{mensajeOta}</span>
+        </div>
+      )}
+
+      {/* Barra de Navegación Superior con Respeto al Notch */}
+      <header
+        className="sticky top-0 z-40 bg-stone-900/90 backdrop-blur-md border-b border-stone-800/80 px-4 sm:px-6 flex items-center justify-between"
+        style={{
+          paddingTop: 'max(var(--notch-top, 0px), env(safe-area-inset-top, 0px), 12px)',
+          paddingBottom: '12px',
+          paddingLeft: 'max(var(--notch-left, 0px), env(safe-area-inset-left, 0px), 16px)',
+          paddingRight: 'max(var(--notch-right, 0px), env(safe-area-inset-right, 0px), 16px)',
+        }}
+      >
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 flex items-center justify-center text-stone-950 shadow-md border border-amber-300 shrink-0">
             <Flame className="w-5 h-5 stroke-[2.5]" />
@@ -475,12 +556,17 @@ export const App: React.FC = () => {
                 La Estación Grill
               </h1>
               <span className="text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-amber-400/10 text-amber-300 border border-amber-500/30">
-                Crash & Audit Ops
+                Terminal Ops
               </span>
             </div>
-            <p className="text-[11px] text-stone-400 hidden sm:block">
-              Monitoreo y Telemetría Centralizada de Terminales
-            </p>
+            <div className="flex items-center gap-2 text-[11px] text-stone-400">
+              <span className="hidden sm:inline">Monitoreo Centralizado</span>
+              <span className="hidden sm:inline text-stone-600">•</span>
+              <span className="text-emerald-400 font-mono text-[10px] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Auto: 8s ({ultimaSincronizacion})
+              </span>
+            </div>
           </div>
         </div>
 
@@ -497,9 +583,21 @@ export const App: React.FC = () => {
           >
             <Radio className="w-3.5 h-3.5 animate-pulse" />
             <span className="hidden md:inline">
-              {conectadoRealtime ? 'En Vivo (Realtime)' : 'Desconectado'}
+              {conectadoRealtime ? 'En Vivo' : 'Desconectado'}
             </span>
           </div>
+
+          {/* Botón Comprobar Actualización de la App (OTA) */}
+          <button
+            type="button"
+            onClick={handleBuscarActualizacionOta}
+            disabled={comprobandoOta}
+            title="Comprobar e instalar nueva versión de la Terminal"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${comprobandoOta ? 'animate-spin' : ''}`} />
+            <span className="hidden lg:inline">Actualizar App</span>
+          </button>
 
           {/* Alternar Alerta Sonora */}
           <button
@@ -515,7 +613,7 @@ export const App: React.FC = () => {
             {sonidoHabilitado ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
           </button>
 
-          {/* Refrescar Datos */}
+          {/* Refrescar Datos Manualmente */}
           <button
             type="button"
             onClick={cargarLogs}
@@ -539,7 +637,14 @@ export const App: React.FC = () => {
       </header>
 
       {/* Contenedor Principal */}
-      <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
+      <main
+        className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-6"
+        style={{
+          paddingBottom: 'max(var(--notch-bottom, 0px), env(safe-area-inset-bottom, 0px), 24px)',
+          paddingLeft: 'max(var(--notch-left, 0px), env(safe-area-inset-left, 0px), 16px)',
+          paddingRight: 'max(var(--notch-right, 0px), env(safe-area-inset-right, 0px), 16px)',
+        }}
+      >
         {/* Alerta de Tabla no Creada en Supabase */}
         {tablaNoExiste && (
           <div className="p-4 sm:p-5 rounded-2xl bg-amber-950/40 border border-amber-600/50 shadow-xl space-y-3">
@@ -661,8 +766,19 @@ export const App: React.FC = () => {
           <div className="p-4 rounded-2xl bg-stone-900/80 border border-stone-800 flex items-center justify-between col-span-2 lg:col-span-1">
             <div>
               <p className="text-xs text-stone-400 font-medium">Dispositivos</p>
-              <p className="text-2xl font-black text-emerald-400 mt-1">
-                {estadisticas.dispositivosUnicos}
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-2xl font-black text-emerald-400">
+                  {dispositivosEnLinea.length > 0 ? dispositivosEnLinea.length : estadisticas.dispositivosUnicos}
+                </p>
+                {dispositivosEnLinea.length > 0 && (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-1.5 py-0.5 rounded-full font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                    En vivo
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-stone-500 mt-0.5">
+                {estadisticas.dispositivosUnicos} registrados en total
               </p>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
@@ -670,6 +786,39 @@ export const App: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {/* Barra de Dispositivos Conectados en Tiempo Real */}
+        {dispositivosEnLinea.length > 0 && (
+          <div className="p-3 rounded-2xl bg-stone-900/90 border border-emerald-900/40 flex flex-wrap items-center gap-2 text-xs shadow-lg">
+            <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Terminales en línea ({dispositivosEnLinea.length}):
+            </span>
+            {dispositivosEnLinea.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setFiltro({ ...filtro, dispositivoId: id })}
+                className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono cursor-pointer transition-all ${
+                  filtro.dispositivoId === id
+                    ? 'bg-emerald-500 text-stone-950 border-emerald-400 font-bold'
+                    : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-emerald-700'
+                }`}
+              >
+                {id}
+              </button>
+            ))}
+            {filtro.dispositivoId !== 'TODOS' && (
+              <button
+                type="button"
+                onClick={() => setFiltro({ ...filtro, dispositivoId: 'TODOS' })}
+                className="text-[11px] text-amber-400 underline hover:text-amber-300 cursor-pointer ml-auto"
+              >
+                Ver todos
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Barra de Controles y Filtros */}
         <section className="p-4 rounded-2xl bg-stone-900/70 border border-stone-800 space-y-4">
