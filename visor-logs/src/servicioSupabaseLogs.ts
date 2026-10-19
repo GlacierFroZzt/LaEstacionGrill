@@ -1,0 +1,138 @@
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
+import type { RegistroLog } from './types';
+
+export class ServicioSupabaseLogs {
+  private static instancia: ServicioSupabaseLogs | null = null;
+  private cliente: SupabaseClient;
+  private canal: RealtimeChannel | null = null;
+
+  public static readonly URL_PREDETERMINADA =
+    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
+    'https://idgyotujnoavliaqtuck.supabase.co';
+
+  public static readonly ANON_KEY_PREDETERMINADA =
+    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkZ3lvdHVqbm9hdmxpYXF0dWNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwMjg4ODUsImV4cCI6MjEwNzYwNDg4NX0.ywXODlKIzn68R-5dzvQC-evagSsHa7iNkv82l68dJT8';
+
+  private constructor() {
+    this.cliente = createClient(
+      ServicioSupabaseLogs.URL_PREDETERMINADA,
+      ServicioSupabaseLogs.ANON_KEY_PREDETERMINADA,
+      {
+        realtime: {
+          params: {
+            eventsPerSecond: 10,
+          },
+        },
+      }
+    );
+  }
+
+  public static obtenerInstancia(): ServicioSupabaseLogs {
+    if (!ServicioSupabaseLogs.instancia) {
+      ServicioSupabaseLogs.instancia = new ServicioSupabaseLogs();
+    }
+    return ServicioSupabaseLogs.instancia;
+  }
+
+  /**
+   * Carga los registros más recientes de Supabase.
+   */
+  public async obtenerLogs(limite: number = 300): Promise<RegistroLog[]> {
+    try {
+      const { data, error } = await this.cliente
+        .from('logs_sistema')
+        .select('*')
+        .order('creado_en', { ascending: false })
+        .limit(limite);
+
+      if (error) {
+        console.error('[ServicioSupabaseLogs] Error al consultar logs:', error.message);
+        return [];
+      }
+
+      return (data as RegistroLog[]) || [];
+    } catch (err: unknown) {
+      console.error('[ServicioSupabaseLogs] Excepción al consultar logs:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Suscribe al flujo en tiempo real de nuevos logs ingresados por cualquier dispositivo.
+   */
+  public suscribirEnVivo(
+    onNuevoLog: (log: RegistroLog) => void,
+    onEstadoConexion?: (conectado: boolean) => void
+  ): () => void {
+    if (this.canal) {
+      this.cliente.removeChannel(this.canal);
+      this.canal = null;
+    }
+
+    this.canal = this.cliente
+      .channel('logs_sistema_live_feed')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'logs_sistema' },
+        (payload) => {
+          if (payload.new) {
+            onNuevoLog(payload.new as RegistroLog);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (onEstadoConexion) {
+          onEstadoConexion(status === 'SUBSCRIBED');
+        }
+      });
+
+    return () => {
+      if (this.canal) {
+        this.cliente.removeChannel(this.canal);
+        this.canal = null;
+      }
+    };
+  }
+
+  /**
+   * Inserta un log de prueba (útil para verificar telemetría en vivo).
+   */
+  public async insertarLogPrueba(
+    nivel: 'CRASH' | 'ERROR' | 'WARN' | 'INFO',
+    mensaje: string,
+    detalles: Record<string, unknown> = {}
+  ): Promise<boolean> {
+    try {
+      const { error } = await this.cliente.from('logs_sistema').insert({
+        id: `test-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        nivel,
+        origen: 'visor-logs-admin',
+        dispositivo_id: 'consola-admin',
+        mensaje,
+        detalles,
+        creado_en: new Date().toISOString(),
+      });
+      return !error;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Purga todos los registros de la base de datos (acción de administrador).
+   */
+  public async purgarTodosLosLogs(): Promise<boolean> {
+    try {
+      const { error } = await this.cliente
+        .from('logs_sistema')
+        .delete()
+        .neq('id', 'imposible-id-no-match');
+      return !error;
+    } catch {
+      return false;
+    }
+  }
+}
+
+export const servicioSupabaseLogs = ServicioSupabaseLogs.obtenerInstancia();

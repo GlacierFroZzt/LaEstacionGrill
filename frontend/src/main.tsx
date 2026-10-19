@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { servicioActualizaciones } from './services/servicioActualizaciones'
+import './services/servicioTelemetria'
 
 // Exponer y disparar verificación automática inmediata en segundo plano
 declare global {

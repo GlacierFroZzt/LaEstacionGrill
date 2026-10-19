@@ -1193,3 +1193,45 @@
   - Incrementado a **v1.2.1** en `version.json`, `package.json` y `app/build.gradle.kts`.
   - Compilación de TypeScript aprobada con 0 errores.
   - Sincronización a Android e iOS y despliegue OTA exitoso en Supabase Storage.
+
+
+## 18. Sistema de Telemetría Global y Aplicación Privada de Auditoría ("visor-logs")
+- **Requerimiento del Usuario:**
+  - *"Elaborame otra app para ver los registros completos, que se guarden y muestren los mensajes importantes como errores o crasheos, esa es solo para mí"*.
+- **Arquitectura de la Solución (3 Capas):**
+  1. **Capa de Persistencia y Realtime en PostgreSQL / Supabase (`supabase/esquema_logs.sql`):**
+     - Se definió la tabla `public.logs_sistema` con campos:
+       - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+       - `nivel TEXT CHECK (nivel IN ('info', 'warn', 'error', 'crash'))`
+       - `origen TEXT` (ej. `'frontend'`, `'error_boundary'`, `'sistema_red'`, `'visor_logs'`)
+       - `dispositivo_id TEXT` (identificador único persistente de cada tablet o celular)
+       - `mensaje TEXT` (resumen del evento o error)
+       - `detalles JSONB` (pila de llamadas / stack trace, URL, userAgent, metadatos estructurados)
+       - `creado_en TIMESTAMPTZ DEFAULT timezone('utc'::text, now())`
+     - Se crearon índices optimizados B-Tree sobre `creado_en DESC` y `nivel`.
+     - Se configuró la política de seguridad RLS para inserción pública (`anon`) y lectura, activando `REPLICA IDENTITY FULL` y publicando la tabla en `supabase_realtime`.
+  2. **Capa de Instrumentación en la App Principal (`frontend`):**
+     - **Servicio de Telemetría Centralizado ([`servicioTelemetria.ts`](file:///d:/TaqueriaKm243/frontend/src/services/servicioTelemetria.ts)):**
+       - Captura global de excepciones no controladas mediante `window.onerror` y `window.onunhandledrejection`.
+       - Genera o recupera un `dispositivoId` persistente en `localStorage`.
+       - Métodos tipados: `registrarInfo`, `registrarAdvertencia`, `registrarError` y `registrarCrash`.
+       - **Resiliencia Offline:** Si el dispositivo pierde red o internet al ocurrir un error, el log se almacena en una cola local (`taqueria_logs_pendientes_v1`) y se purga y sincroniza automáticamente al reconectarse (`online`).
+     - **Integración con ErrorBoundary ([`ErrorBoundary.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ErrorBoundary.tsx)):**
+       - Cada vez que un componente React falla, `componentDidCatch` invoca inmediatamente `servicioTelemetria.registrarCrash(error, errorInfo)`.
+     - **Inicialización Temprana ([`main.tsx`](file:///d:/TaqueriaKm243/frontend/src/main.tsx)):**
+       - Se inicializa el servicio al arranque del bundle web y se registra un evento inicial con la versión actual de la app.
+  3. **Aplicación Web Privada e Independiente (`visor-logs`):**
+     - Directorio aislado: `d:\TaqueriaKm243\visor-logs`.
+     - Stack tecnológico: React 19, TypeScript estricto (`strict: true`, 0 `any`), Vite, Tailwind CSS v4 y Lucide Icons.
+     - **Características Implementadas:**
+       - **Autenticación con PIN Privado:** Pantalla de bloqueo dedicada con teclado numérico para restringir el acceso exclusivamente al dueño/administrador.
+       - **Suscripción en Tiempo Real:** Conexión vía WebSocket (`supabase.channel`) a la tabla `logs_sistema` para recibir eventos en vivo sin necesidad de recargar.
+       - **Panel de Estadísticas (KPIs):** Conteo dinámico de Crashes críticos, Errores, Advertencias y Registros informativos.
+       - **Alerta Auditiva de Emergencia:** Emisión de doble tono de alerta usando Web Audio API nativo cuando arriba un nuevo registro de nivel `crash`.
+       - **Filtrado Avanzado:** Búsqueda textual en tiempo real por mensaje/origen, selector de nivel (`TODOS`, `CRASH`, `ERROR`, `WARN`, `INFO`), filtro por ID de dispositivo y filtro por rango temporal (1 hora, 24 horas, 7 días, todo).
+       - **Modal de Inspección Quirúrgica:** Vista detallada de cada log con formateador de código para stack traces y visor de metadatos JSON.
+       - **Herramientas de Exportación y Mantenimiento:** Descarga de reportes en formatos JSON y CSV, botón de simulación de log de prueba y purga de historial.
+  4. **Monorepo y Despliegue:**
+     - Se añadieron scripts en la raíz `package.json`: `"dev:logs"` y `"build:logs"`.
+     - Se añadió `visor-logs/vercel.json` para despliegue independiente con un clic en Vercel.
+

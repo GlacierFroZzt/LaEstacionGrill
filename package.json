@@ -5,6 +5,8 @@
   "description": "Sistema de Punto de Venta, KDS y Comandas para La Estación Grill",
   "scripts": {
     "build": "pnpm --filter ./frontend run build",
+    "dev:logs": "pnpm --filter ./visor-logs run dev",
+    "build:logs": "pnpm --filter ./visor-logs run build",
     "deploy:vercel": "pnpm --filter ./frontend run deploy:vercel",
     "deploy:supabase": "pnpm --filter ./frontend run deploy:supabase",
     "build:apk": "pnpm --filter ./frontend run build:apk"

@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* Scrollbar personalizado para terminal de logs */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(18, 16, 14, 0.8);
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(120, 53, 15, 0.6);
+    border-radius: 9999px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(245, 158, 11, 0.8);
+  }
+}

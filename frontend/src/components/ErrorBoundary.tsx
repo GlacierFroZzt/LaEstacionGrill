@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react';
+import { servicioTelemetria } from '../services/servicioTelemetria';
 
 export interface PropsErrorBoundary {
   children: ReactNode;
@@ -22,6 +23,11 @@ export class ErrorBoundary extends Component<PropsErrorBoundary, EstadoErrorBoun
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     console.error('[ErrorBoundary Global] Excepción no controlada en interfaz:', error, errorInfo);
+    // Transmitir crash en segundo plano hacia Supabase y almacenamiento local
+    servicioTelemetria.registrarCrash(error, {
+      componentStack: errorInfo.componentStack,
+      origenError: 'React ErrorBoundary',
+    });
   }
 
   private handleReintentar = (): void => {
