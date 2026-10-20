@@ -17,6 +17,7 @@ import {
   ArrowRightLeft,
   BellRing,
   Flame,
+  User,
 } from 'lucide-react';
 import type { Mesa, TipoArea } from '../types';
 import { useRestaurante } from '../context/RestauranteContext';
@@ -25,6 +26,7 @@ import { BotonOroLiquido } from './BotonOroLiquido';
 import { gestorNavegacion } from '../utils/navegacionDispositivo';
 import { ModalRenombrarMesa } from './ModalRenombrarMesa';
 import { ModalMoverMesa } from './ModalMoverMesa';
+import { esRelevanteParaMesero } from '../utils/filtroMesero';
 
 type FiltroZona = TipoArea | 'todas';
 
@@ -48,6 +50,7 @@ export const DashboardMesas: React.FC = () => {
     nivelOroLiquido,
     pedidosCocina,
     cambiarEstadoPedidoCocina,
+    meseroActual,
   } = useRestaurante();
 
   const [filtroArea, setFiltroArea] = useState<FiltroZona>('todas');
@@ -497,9 +500,18 @@ export const DashboardMesas: React.FC = () => {
             }
 
             // --- CASO 2: MESA / PEDIDO ACTIVO (OCUPADA O POR COBRAR) ---
-            const pedidosMesa = pedidosCocina.filter(
-              (p) => p.mesaId === mesa.id && p.estado !== 'entregado'
-            );
+            // Búsqueda exhaustiva de pedidos en cocina vinculados a esta mesa
+            const nombreMesaBase = mesa.nombre.trim().toLowerCase();
+            const pedidosMesa = pedidosCocina.filter((p) => {
+              if (p.estado === 'entregado') return false;
+              if (p.mesaId && p.mesaId === mesa.id) return true;
+              if (mesa.cuentaActivaId && p.comandaId === mesa.cuentaActivaId) return true;
+              const nombrePedido = p.nombreMesa.trim().toLowerCase();
+              if (nombrePedido === nombreMesaBase) return true;
+              if (nombrePedido.startsWith(nombreMesaBase + ' ') || nombrePedido.startsWith(nombreMesaBase + '(')) return true;
+              return false;
+            });
+
             const pedidosListosMesa = pedidosMesa.filter((p) => p.estado === 'listo');
             const pedidosEnPrepMesa = pedidosMesa.filter((p) => p.estado === 'en_preparacion');
             const pedidosPendientesMesa = pedidosMesa.filter((p) => p.estado === 'pendiente');
@@ -508,12 +520,19 @@ export const DashboardMesas: React.FC = () => {
             const tienePedidoEnPrep = pedidosEnPrepMesa.length > 0;
             const tienePedidoPendiente = pedidosPendientesMesa.length > 0;
 
+            // Extraer el mesero más relevante registrado en la comanda/pedidos de la mesa
+            const meseroRegistrado = mesa.meseroAsignado || pedidosMesa[0]?.mesero || '';
+            const esMesaDelMeseroActual = esRelevanteParaMesero(meseroRegistrado, meseroActual);
+
             let claseBordeLiquido = '';
             let fondoInterior = esClaro ? 'bg-amber-50/90' : 'bg-stone-900/95';
 
             if (tienePedidoListo) {
               // COLOR ESPECIAL VERDE ESMERALDA RESPLANDECIENTE: ¡Pedido Listo en Cocina!
-              claseBordeLiquido = 'tarjeta-borde-listo-cocina';
+              // Si la mesa es del mesero logueado, se activa animación pulsante de alta prioridad
+              claseBordeLiquido = esMesaDelMeseroActual
+                ? 'tarjeta-borde-listo-cocina animate-pulse'
+                : 'tarjeta-borde-listo-cocina';
               fondoInterior = esClaro ? 'bg-emerald-50/95' : 'bg-emerald-950/85';
             } else if (tienePedidoEnPrep) {
               // COLOR ESPECIAL NARANJA BRASA: Cocina está preparando la orden
@@ -572,27 +591,50 @@ export const DashboardMesas: React.FC = () => {
                   </div>
                 )}
 
-                {/* Cabecera con Nombre y Tiempo */}
+                {/* Cabecera con Nombre, Mesero Asignado y Tiempo */}
                 <div className="flex items-center justify-between gap-1.5 min-w-0">
-                  <span className="font-black text-base sm:text-lg flex items-center gap-1.5 min-w-0">
-                    {esDomicilio ? (
-                      <Bike className="w-4 h-4 text-cyan-500 shrink-0" />
-                    ) : (
-                      <Users className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-black text-base sm:text-lg flex items-center gap-1.5 min-w-0">
+                      {esDomicilio ? (
+                        <Bike className="w-4 h-4 text-cyan-500 shrink-0" />
+                      ) : (
+                        <Users className="w-4 h-4 text-amber-400 shrink-0" />
+                      )}
+                      <span className="truncate">{mesa.nombre}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMesaParaRenombrar(mesa);
+                        }}
+                        className="p-1 rounded-md text-stone-400 hover:text-amber-400 hover:bg-stone-800/40 transition-colors cursor-pointer shrink-0"
+                        title={`Cambiar nombre de ${mesa.nombre}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+
+                    {/* Insignia de Mesero Asignado */}
+                    {meseroRegistrado && (
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 shrink-0 border ${
+                          esMesaDelMeseroActual
+                            ? esClaro
+                              ? 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-extrabold'
+                            : esClaro
+                            ? 'bg-stone-200 text-stone-700 border-stone-300'
+                            : 'bg-stone-800/80 text-stone-400 border-stone-700/60'
+                        }`}
+                        title={`Mesero a cargo: ${meseroRegistrado}`}
+                      >
+                        <User className="w-2.5 h-2.5 shrink-0" />
+                        <span className="truncate max-w-[70px]">
+                          {esMesaDelMeseroActual ? 'Tú' : meseroRegistrado}
+                        </span>
+                      </span>
                     )}
-                    <span className="truncate">{mesa.nombre}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMesaParaRenombrar(mesa);
-                      }}
-                      className="p-1 rounded-md text-stone-400 hover:text-amber-400 hover:bg-stone-800/40 transition-colors cursor-pointer shrink-0"
-                      title={`Cambiar nombre de ${mesa.nombre}`}
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </span>
+                  </div>
 
                   <span
                     className={`flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 ${
@@ -606,8 +648,8 @@ export const DashboardMesas: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Centro: Total en Grande e Indicador de Cocina */}
-                <div className="my-1.5 flex flex-col gap-1">
+                {/* Centro: Total en Grande e Indicador de Cocina Prominente */}
+                <div className="my-1.5 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-stone-400 flex items-center gap-0.5">
                       <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
@@ -618,12 +660,31 @@ export const DashboardMesas: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Banners e Insignias de Estado de Cocina en la Mesa */}
+                  {/* Banners e Insignias de Estado de Cocina en la Mesa (Destacado y Relevante) */}
                   {tienePedidoListo ? (
-                    <div className="flex items-center justify-between px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 animate-pulse text-xs font-black shadow-sm">
+                    <div
+                      className={`flex items-center justify-between p-2 rounded-xl border shadow-md transition-all ${
+                        esMesaDelMeseroActual
+                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200 shadow-emerald-950/40 ring-2 ring-emerald-500/40'
+                          : 'bg-emerald-950/60 border-emerald-600/60 text-emerald-300/90'
+                      }`}
+                    >
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <BellRing className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span className="truncate">¡PEDIDO LISTO!</span>
+                        <BellRing
+                          className={`w-4 h-4 text-emerald-400 shrink-0 ${
+                            esMesaDelMeseroActual ? 'animate-bounce' : ''
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <span className="text-[11px] sm:text-xs font-black tracking-wide block truncate">
+                            {esMesaDelMeseroActual
+                              ? '¡TU PEDIDO ESTÁ LISTO!'
+                              : `¡LISTO! (${meseroRegistrado || 'Cocina'})`}
+                          </span>
+                          <span className="text-[10px] text-emerald-300/80 block truncate">
+                            {pedidosListosMesa.reduce((acc, p) => acc + p.items.length, 0)} platillo(s) en barra
+                          </span>
+                        </div>
                       </div>
                       <button
                         type="button"
@@ -634,16 +695,31 @@ export const DashboardMesas: React.FC = () => {
                           });
                           mostrarMensaje(`Se marcó como entregado el pedido de ${mesa.nombre}.`, 'exito');
                         }}
-                        className="px-2 py-0.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-[10px] uppercase shadow-xs transition-transform active:scale-90 cursor-pointer shrink-0"
+                        className="ml-1 px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-[10px] uppercase shadow-sm transition-transform active:scale-90 cursor-pointer shrink-0"
                         title="Marcar pedido como servido y entregado a los clientes"
                       >
                         ✓ Entregar
                       </button>
                     </div>
                   ) : tienePedidoEnPrep ? (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-orange-500/15 border border-orange-500/40 text-orange-400 text-xs font-extrabold">
-                      <Flame className="w-3.5 h-3.5 text-orange-400 fill-orange-400 shrink-0 animate-bounce" />
-                      <span className="truncate">Cocina preparando al carbón...</span>
+                    <div
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-extrabold ${
+                        esMesaDelMeseroActual
+                          ? 'bg-orange-500/20 border-orange-500/60 text-orange-300 shadow-sm'
+                          : 'bg-orange-950/40 border-orange-600/40 text-orange-400/90'
+                      }`}
+                    >
+                      <Flame className="w-4 h-4 text-orange-400 fill-orange-400 shrink-0 animate-bounce" />
+                      <div className="min-w-0">
+                        <span className="truncate block font-black">
+                          {esMesaDelMeseroActual
+                            ? 'Preparando tu comanda...'
+                            : `En preparación (${meseroRegistrado || 'Cocina'})`}
+                        </span>
+                        <span className="text-[10px] text-orange-300/70 block truncate">
+                          Al carbón en el comal
+                        </span>
+                      </div>
                     </div>
                   ) : tienePedidoPendiente ? (
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold text-amber-400/80">

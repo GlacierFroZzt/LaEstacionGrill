@@ -23,12 +23,15 @@ import { servicioSupabase } from '../services/servicioSupabase';
 import { servicioTelemetria } from '../services/servicioTelemetria';
 import { reproducirCampanaCocina, reproducirTimbrePedidoListo } from '../utils/sonidoCocina';
 import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
+import { esRelevanteParaMesero } from '../utils/filtroMesero';
 
 export interface NotificacionCocinaMesero {
   readonly id: string;
   readonly pedidoId: string;
   readonly mesaId: string;
   readonly nombreMesa: string;
+  readonly mesero?: string;
+  readonly esMiMesa?: boolean;
   readonly estado: 'en_preparacion' | 'listo';
   readonly mensaje: string;
   readonly resumenItems: string;
@@ -341,24 +344,33 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         // Si el pedido ya estaba registrado y cambió a 'en_preparacion' o 'listo'
         if (estadoAnterior !== undefined) {
           const resumen = p.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(', ');
+          const esRelevante = esRelevanteParaMesero(p.mesero, meseroActual);
+
           if (p.estado === 'en_preparacion' && estadoAnterior === 'pendiente') {
             nuevasAlertas.push({
               id: `notif-prep-${p.id}-${Date.now()}`,
               pedidoId: p.id,
               mesaId: p.mesaId,
               nombreMesa: p.nombreMesa,
+              mesero: p.mesero,
+              esMiMesa: esRelevante,
               estado: 'en_preparacion',
               mensaje: `Cocina está preparando el pedido de ${p.nombreMesa}`,
               resumenItems: resumen,
               timestamp: Date.now(),
             });
           } else if (p.estado === 'listo' && estadoAnterior !== 'listo') {
-            sonarTimbreListo = true;
+            // Sólo hacemos sonar la campanilla si el pedido es del mesero logueado (o si es perfil global)
+            if (esRelevante) {
+              sonarTimbreListo = true;
+            }
             nuevasAlertas.push({
               id: `notif-listo-${p.id}-${Date.now()}`,
               pedidoId: p.id,
               mesaId: p.mesaId,
               nombreMesa: p.nombreMesa,
+              mesero: p.mesero,
+              esMiMesa: esRelevante,
               estado: 'listo',
               mensaje: `¡Pedido LISTO en cocina para ${p.nombreMesa}!`,
               resumenItems: resumen,
@@ -384,7 +396,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return [...nuevasAlertas, ...filtradas].slice(0, 5);
       });
     }
-  }, [pedidosCocina]);
+  }, [pedidosCocina, meseroActual]);
 
   // Auto-descartar notificaciones informativas de "en_preparacion" después de 8 segundos
   useEffect(() => {

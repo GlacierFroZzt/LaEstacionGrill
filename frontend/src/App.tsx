@@ -31,6 +31,7 @@ import { Utensils, Receipt, BellRing, Flame, Sparkles, X, Check, RefreshCw } fro
 import { formatearMoneda } from './utils/formateadores';
 import { LienzoOroLiquido } from './components/LienzoOroLiquido';
 import { servicioActualizaciones, type ResultadoVerificacionOta } from './services/servicioActualizaciones';
+import { esRelevanteParaMesero } from './utils/filtroMesero';
 import { servicioLicencia, type EstadoLicencia } from './services/servicioLicencia';
 import { PantallaBloqueoLicencia } from './components/PantallaBloqueoLicencia';
 import { servicioSeguridadPin, type EstadoSeguridadPin } from './services/servicioSeguridadPin';
@@ -57,6 +58,7 @@ const PantallaPrincipal: React.FC = () => {
     notificacionesCocina,
     descartarNotificacionCocina,
     cambiarEstadoPedidoCocina,
+    meseroActual,
   } = useRestaurante();
   const [modalCobroAbierto, setModalCobroAbierto] = useState<boolean>(false);
   const [modalCorteAbierto, setModalCorteAbierto] = useState<boolean>(false);
@@ -256,75 +258,84 @@ const PantallaPrincipal: React.FC = () => {
         )}
 
         {/* Toasts Flotantes de Pedidos Listos / En Preparación de Cocina para Meseros */}
-        {vistaActual !== 'cocina' && notificacionesCocina.length > 0 && (
+        {vistaActual !== 'cocina' && (
           <div className="absolute top-14 right-3 sm:right-6 z-40 flex flex-col gap-2 max-w-sm w-full pointer-events-auto">
-            {notificacionesCocina.map((notif) => {
-              const esListo = notif.estado === 'listo';
-              return (
-                <div
-                  key={notif.id}
-                  className={`p-3 rounded-2xl shadow-2xl border flex items-center justify-between gap-2.5 animate-in slide-in-from-top-2 duration-200 ${
-                    esListo
-                      ? 'bg-emerald-950/95 border-emerald-400 text-emerald-100 shadow-emerald-950/70'
-                      : 'bg-stone-900/95 border-orange-500/80 text-orange-100 shadow-stone-950/70'
-                  }`}
-                >
-                  <div className="flex items-start gap-2.5 min-w-0">
-                    <div
-                      className={`p-2 rounded-xl shrink-0 ${
-                        esListo
-                          ? 'bg-emerald-500 text-stone-950 animate-bounce'
-                          : 'bg-orange-500 text-stone-950'
-                      }`}
-                    >
-                      {esListo ? (
-                        <BellRing className="w-4 h-4 stroke-[2.5]" />
-                      ) : (
-                        <Flame className="w-4 h-4 stroke-[2.5]" />
-                      )}
-                    </div>
-                    <div className="min-w-0 text-left">
-                      <span
-                        className={`text-[10px] uppercase font-black tracking-wider block ${
-                          esListo ? 'text-emerald-400' : 'text-orange-400'
+            {notificacionesCocina
+              .filter((notif) => esRelevanteParaMesero(notif.mesero, meseroActual))
+              .map((notif) => {
+                const esListo = notif.estado === 'listo';
+                return (
+                  <div
+                    key={notif.id}
+                    className={`p-3 rounded-2xl shadow-2xl border flex items-center justify-between gap-2.5 animate-in slide-in-from-top-2 duration-200 ${
+                      esListo
+                        ? 'bg-emerald-950/95 border-emerald-400 text-emerald-100 shadow-emerald-950/70'
+                        : 'bg-stone-900/95 border-orange-500/80 text-orange-100 shadow-stone-950/70'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div
+                        className={`p-2 rounded-xl shrink-0 ${
+                          esListo
+                            ? 'bg-emerald-500 text-stone-950 animate-bounce'
+                            : 'bg-orange-500 text-stone-950'
                         }`}
                       >
-                        {esListo ? '¡Pedido Listo en Barra/Cocina!' : 'Al Carbón en Cocina'}
-                      </span>
-                      <h4 className="text-xs font-black truncate text-stone-100">{notif.nombreMesa}</h4>
-                      {notif.resumenItems && (
-                        <p className="text-[11px] text-stone-300 line-clamp-1">{notif.resumenItems}</p>
-                      )}
+                        {esListo ? (
+                          <BellRing className="w-4 h-4 stroke-[2.5]" />
+                        ) : (
+                          <Flame className="w-4 h-4 stroke-[2.5]" />
+                        )}
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[10px] uppercase font-black tracking-wider block ${
+                              esListo ? 'text-emerald-400' : 'text-orange-400'
+                            }`}
+                          >
+                            {esListo ? '¡Pedido Listo en Cocina!' : 'Al Carbón en Cocina'}
+                          </span>
+                          {notif.mesero && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-stone-800 text-stone-300 border border-stone-700">
+                              👤 {notif.mesero}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-xs font-black truncate text-stone-100">{notif.nombreMesa}</h4>
+                        {notif.resumenItems && (
+                          <p className="text-[11px] text-stone-300 line-clamp-1">{notif.resumenItems}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {esListo && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {esListo && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            cambiarEstadoPedidoCocina(notif.pedidoId, 'entregado');
+                            descartarNotificacionCocina(notif.id);
+                          }}
+                          className="py-1 px-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                          title="Marcar como entregado a los clientes"
+                        >
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Entregado</span>
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => {
-                          cambiarEstadoPedidoCocina(notif.pedidoId, 'entregado');
-                          descartarNotificacionCocina(notif.id);
-                        }}
-                        className="py-1 px-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center gap-1"
-                        title="Marcar como entregado a los clientes"
+                        onClick={() => descartarNotificacionCocina(notif.id)}
+                        className="p-1 rounded-lg text-stone-400 hover:text-white transition-colors cursor-pointer"
+                        title="Descartar aviso"
                       >
-                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        <span>Entregado</span>
+                        <X className="w-4 h-4" />
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => descartarNotificacionCocina(notif.id)}
-                      className="p-1 rounded-lg text-stone-400 hover:text-white transition-colors cursor-pointer"
-                      title="Descartar aviso"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
 

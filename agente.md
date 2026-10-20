@@ -1602,3 +1602,34 @@
      - **Toasts Flotantes Globales:** El mesero recibe el aviso en tiempo real aunque esté en el comandero de otra mesa.
 - **Verificación y Despliegue:**
   - Compilación TypeScript estricta y empaquetado Vite v1.3.0 exitosos.
+
+
+## 34. Notificaciones de Cocina Directamente en Tarjeta de Mesa con Filtro por Mesero Activo
+- **Requerimientos del Usuario:**
+  1. *"Pero que la notificacion se vea en la tarjeta"*.
+  2. *"Ademas que solo sea relevante si la mesa es de x mesero"*.
+- **Diagnóstico y Causas Identificadas:**
+  1. **Discrepancia en Coincidencia Mesa-Pedido Cocina:**
+     - Al buscar pedidos vinculados a una mesa en `DashboardMesas`, se comparaba únicamente `p.mesaId === mesa.id`. Si un pedido guardaba `nombreMesa: "Mesa 2 (Ronda 2)"` o se abría con un ID temporal distinto, no vinculaba los pedidos listos a la tarjeta.
+  2. **Alertas Globales Ruidosas para Todos los Meseros:**
+     - El timbre acústico (`reproducirTimbrePedidoListo`) y los avisos flotantes se disparaban para cualquier pedido que saliera de cocina sin importar si correspondía al mesero logueado, interrumpiendo a otros meseros.
+  3. **Visibilidad Insuficiente en la Tarjeta:**
+     - La tarjeta de mesa no destacaba quién era el mesero asignado ni contaba con un contenedor prominente y contrastante para el estado de cocina.
+- **Decisiones Arquitectónicas y Solución Implementada:**
+  1. **Utilidad de Filtrado y Relevancia por Mesero ([`filtroMesero.ts`](file:///d:/TaqueriaKm243/frontend/src/utils/filtroMesero.ts)):**
+     - Se crearon las funciones `esRelevanteParaMesero(meseroEntidad, meseroActual)` y `esMiMesaOMiPedido()`.
+     - Roles de perfil global/administrativo (`caja`, `admin`, `administrador`, `todos`, `gerente`, `cocina`) tienen visibilidad y alertas de todas las mesas.
+     - Para un mesero específico (ej. *"Beto"*, *"Diego"*), las alertas acústicas y los banners de alta prioridad solo se activan si la orden o mesa le pertenece.
+  2. **Alertas Acústicas y Toasts Selectivos ([`RestauranteContext.tsx`](file:///d:/TaqueriaKm243/frontend/src/context/RestauranteContext.tsx) y [`App.tsx`](file:///d:/TaqueriaKm243/frontend/src/App.tsx)):**
+     - En el efecto de cocina de `RestauranteContext`, el timbre `reproducirTimbrePedidoListo()` se reproduce **únicamente** si `esRelevanteParaMesero(p.mesero, meseroActual)`.
+     - Las notificaciones en `App.tsx` se filtran para mostrar al mesero en turno sólo las órdenes que le corresponden, indicando claramente la insignia `👤 {notif.mesero}`.
+  3. **Tarjeta de Mesa enriquecida y Relevante ([`DashboardMesas.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/DashboardMesas.tsx)):**
+     - **Insignia de Mesero:** La cabecera de la mesa muestra un chip con icono de usuario (`👤 Tú` en dorado/ámbar destacado si es su mesa, o `👤 {nombre}` en tono discreto si es de otro mesero).
+     - **Vinculación Robusta:** Coincidencia multicriterio por `id`, `cuentaActivaId` o prefijo de nombre (`Mesa 2`, `Mesa 2 (Ronda 2)`).
+     - **Banner Prominente en la Tarjeta:**
+       - **¡TU PEDIDO ESTÁ LISTO!**: Si la mesa es del mesero logueado, la tarjeta muestra un contenedor verde esmeralda con `ring-2` y animación pulsante de campana (`🔔`), conteo de platillos listos y botón de un solo toque `[✓ Entregar]`. Si es de otro mesero, se muestra con menor urgencia (`¡LISTO! ({mesero})`).
+       - **En Preparación al Carbón**: Muestra `🔥 Preparando tu comanda...` si es del mesero activo o `🔥 En preparación ({mesero})`.
+  4. **Verificación y Despliegue:**
+     - Compilación estricta con 0 errores TypeScript (`pnpm run build`).
+     - Incremento de versión a **v1.3.1** en `package.json`, `frontend/package.json` y `version.json`.
+     - Despliegue OTA completado exitosamente a Supabase Storage (`deploy:supabase`) y sincronizado con Android WebView e iOS.
