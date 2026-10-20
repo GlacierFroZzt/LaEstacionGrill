@@ -9,6 +9,8 @@
     "build:logs": "pnpm --filter ./visor-logs run build",
     "deploy:vercel": "pnpm --filter ./frontend run deploy:vercel",
     "deploy:supabase": "pnpm --filter ./frontend run deploy:supabase",
-    "build:apk": "pnpm --filter ./frontend run build:apk"
+    "deploy:terminal:ota": "pnpm --filter ./visor-logs run build && powershell -ExecutionPolicy Bypass -File ./frontend/empaquetar_terminal.ps1 && node ./frontend/subir_terminal_a_supabase.js",
+    "build:apk": "pnpm --filter ./frontend run build:apk",
+    "build:apk:terminal": "pnpm --filter ./frontend run build:apk:terminal"
   }
 }

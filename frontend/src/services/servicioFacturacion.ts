@@ -11,6 +11,8 @@ import {
 } from '../data/catalogosSat';
 import { servicioSupabase } from './servicioSupabase';
 
+export const URL_PORTAL_SAT_CFDI = 'https://portalcfdi.facturaelectronica.sat.gob.mx/';
+
 const CLAVE_STORAGE_FACTURAS = 'taqueria_km243_facturas_cfdi_v1';
 
 // Expresión regular oficial del SAT para RFC de Persona Física (13 caracteres)
@@ -239,6 +241,75 @@ class ServicioFacturacion {
       estado: 'solicitada',
       fechaCreacion: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Genera una ficha estructurada de texto con los campos exactos para
+   * rellenar en el portal gratuito del SAT (CFDI 4.0).
+   */
+  public generarFichaParaSat(factura: FacturaRegistrada): string {
+    const { receptor, desglose, folioTicket, metodoPagoSat } = factura;
+    return `FICHA DE DATOS PARA PORTAL DEL SAT (CFDI 4.0)
+Taquería La Estación Grill - Ticket #${folioTicket}
+======================================================
+1. DATOS DEL CLIENTE (RECEPTOR):
+- RFC: ${receptor.rfc}
+- Nombre / Razón Social: ${receptor.razonSocial}
+- Código Postal del Domicilio Fiscal: ${receptor.codigoPostal}
+- Régimen Fiscal: ${receptor.regimenFiscal}
+- Uso de la Factura (Uso CFDI): ${receptor.usoCfdi}
+
+2. DATOS DEL COMPROBANTE:
+- Tipo de Comprobante: I - Ingreso
+- Forma de Pago: ${metodoPagoSat.toUpperCase()}
+- Método de Pago: PUE - Pago en una sola exhibición
+- Moneda: MXN - Peso Mexicano
+
+3. CONCEPTO / PRODUCTO:
+- Clave Producto / Servicio: 90101501 (Restaurantes)
+- Cantidad: 1
+- Clave Unidad: E48 (Unidad de servicio)
+- Unidad: Servicio
+- Descripción: Consumo de alimentos y bebidas (Ticket #${folioTicket})
+- Valor Unitario (Subtotal sin IVA): $${desglose.subtotalSinIva.toFixed(2)}
+- Objeto de Impuesto: 02 - Sí objeto de impuesto
+
+4. IMPUESTOS TRASLADADOS:
+- Base: $${desglose.subtotalSinIva.toFixed(2)}
+- Impuesto: 002 - IVA
+- Factor: Tasa
+- Tasa o Cuota: 0.160000
+- Importe de IVA (16%): $${desglose.iva16.toFixed(2)}
+
+5. TOTALES:
+- Subtotal: $${desglose.subtotalSinIva.toFixed(2)}
+- IVA 16%: $${desglose.iva16.toFixed(2)}
+- TOTAL A TIMBRAR: $${desglose.totalConsumoConIva.toFixed(2)}
+${desglose.propinaExcluida > 0 ? `(Propina excluida sin IVA: $${desglose.propinaExcluida.toFixed(2)})` : ''}
+======================================================
+Enlace al SAT: ${URL_PORTAL_SAT_CFDI}`;
+  }
+
+  /**
+   * Actualiza una factura a estado 'timbrada' tras emitirse en el SAT con su Folio Fiscal (UUID).
+   */
+  public async marcarFacturaTimbrada(facturaId: string, uuidSat: string): Promise<FacturaRegistrada | null> {
+    const actuales = this.obtenerFacturasLocales();
+    const indice = actuales.findIndex((f) => f.id === facturaId);
+    if (indice === -1) return null;
+
+    const facturaActualizada: FacturaRegistrada = {
+      ...actuales[indice],
+      estado: 'timbrada',
+      uuidSat: uuidSat.trim().toUpperCase(),
+      fechaTimbrado: new Date().toISOString(),
+    };
+
+    actuales[indice] = facturaActualizada;
+    localStorage.setItem(CLAVE_STORAGE_FACTURAS, JSON.stringify(actuales));
+
+    await this.sincronizarFacturaRemota(facturaActualizada);
+    return facturaActualizada;
   }
 }
 

@@ -1307,3 +1307,105 @@
   5. **Regeneración de APK y Despliegue en la Nube:**
      - APK de Terminal recompilado: [`TerminalAdmin-v1.0.0.apk`](file:///d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk).
      - Bundles OTA de Terminal y Restaurante desplegados en Supabase Storage.
+
+## 22. Visor de Dispositivos Completados y Deduplicación Estricta por Dirección IP
+- **Requerimiento del Usuario:**
+  - *"Haz que pueda ver los dispositivos completados, y que si tienen la misma IP/dirección que no los cuente como 2 distintos"*.
+- **Problemática Detectada:**
+  1. **Contabilización Duplicada:** Tanto el servidor local como Supabase Realtime Presence contabilizaban cada socket o canal como una entidad independiente (`wss.clients.size` u `Object.keys(presenceState).length`). Si una mesera o administrador abría 2 pestañas en el mismo teléfono, o si la app se reconectaba generando un nuevo ID en la misma tablet/celular (misma IP local o pública), el sistema los contaba erróneamente como 2 o 3 dispositivos distintos.
+  2. **Ausencia de Vista Detallada de Dispositivos:** No existía un panel donde el dueño pudiera ver los dispositivos completados con todos sus datos técnicos (dirección IP, plataforma, sesiones simultáneas activas en la misma IP, estado en vivo, hora de última actividad y fallos reportados).
+- **Solución Arquitectónica Implementada:**
+  1. **Servidor Local SQL / WebSocket (`servidor/servidor.js`):**
+     - Se limpia y extrae `req.socket.remoteAddress` como `ipCliente`.
+     - Implementada la función `obtenerTotalDispositivosUnicos()` que agrupa los sockets abiertos por IP. Si 2 o más conexiones comparten la misma IP, **se contabilizan como 1 solo dispositivo**.
+     - El conteo deduplicado se emite en `DISPOSITIVOS_ACTUALIZADOS` y `SYNC_ESTADO_COMPLETO`.
+     - Actualizado `/api/ping` para devolver `{ tuIp: ipCliente }` y añadido el endpoint `/api/dispositivos` con el desglose de IPs y sesiones activas.
+  2. **Servicio Singleton de Detección de IP en el Frontend (`frontend/src/services/servicioDeteccionIp.ts`):**
+     - Diseñado con tipado estricto (`strict: true`) y resolución rápida: consulta `/api/ping` en LAN o servicios públicos (`api.ipify.org` / `api64.ipify.org`) con timeout de 1200 ms.
+     - Almacenamiento en caché en memoria y `sessionStorage` para reutilización instantánea sin latencia en peticiones.
+     - En `servicioSupabase.ts`: el método `track` de presencia anuncia `ip`, `dispositivoId`, `plataforma` y `userAgent`. Al recibir `presenceState()`, deduplica por IP única.
+     - En `servicioTelemetria.ts`: inyecta automáticamente `detalles.ip` en todos los logs e informes de conexión.
+  3. **Visor de Logs y Terminal (`visor-logs`):**
+     - En `types.ts`: definidas las interfaces estrictas `DetallePresencia` e `InfoDispositivoUnificado`.
+     - En `servicioSupabaseLogs.ts`: `suscribirPresencia()` procesa los metadatos completos de presencia (`ip`, `plataforma`, `userAgent`, `conectadoEn`).
+     - En `App.tsx`:
+       - **Agrupación y Deduplicación Matemática:** `dispositivosUnificados` combina presencias en tiempo real y logs históricos. La clave primaria es `ip:${ip}` (o `id:${dispositivo_id}` en caso de no tener IP). Cualquier sesión adicional con la misma IP incrementa `sesionesActivas` e incorpora el ID a `idsDispositivo`, sin alterar el conteo total de dispositivos.
+       - **Métricas Actualizadas:** Las tarjetas KPI y contadores de "Dispositivos en Vivo" y "Registrados" muestran exclusivamente el número de IPs/dispositivos únicos.
+       - **Modal Interactivo "Dispositivos Completados y Conexiones":**
+         - Accesible al tocar la tarjeta de Dispositivos o mediante el botón *"Ver dispositivos completados"* en la barra de presencia.
+         - Muestra el listado exhaustivo de terminales con: estado (🟢 En línea / ⚪ Desconectado), dirección IP destacada con icono de red, alerta visual si hay múltiples sesiones en la misma IP (*"Misma IP: X sesiones activas simultáneas"*), plataforma detectada (Android, iOS, PC), hora de última actividad, desglose de salud (logs, errores, crashes) y botón directo *"Filtrar eventos"* para auditar esa IP con 1 clic.
+  4. **Empaquetado, Despliegue OTA y APK:**
+     - Creado script `frontend/empaquetar_terminal.ps1` y `frontend/subir_terminal_a_supabase.js`.
+     - Desplegado paquete OTA a Supabase Storage: `terminal-version.json` (v1.0.1) y `terminal-bundle.zip` (145.7 KB).
+     - Compilado APK nativo de Terminal: [`TerminalAdmin-v1.0.0.apk`](file:///d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk) (7.54 MB).
+
+## 23. Eliminación Definitiva de Bucles de Auto-Actualización y Recargas Continuas
+- **Requerimiento del Usuario:**
+  - *"La aplicacion se actualiza constantemente, y no deja que el usuario la use"*.
+- **Causas Raíz Identificadas:**
+  1. **Disparo Inmediato en `onPageFinished` y `onResume` en Android:**
+     - `MainActivity.kt` ejecutaba `view.evaluateJavascript("window.servicioActualizacionesAuto()", null)` apenas 400 ms después de cargar la página y 500 ms tras volver a la app.
+  2. **Recarga Incondicional ante Fallos de Descarga:**
+     - En `AndroidOtaBridge.descargarYActualizar`, los bloques `catch (e: Exception)` y `else` ejecutaban `webView.clearCache(true)` y `webView.reload()`. Si ocurría cualquier latencia, fallo HTTP o timeout, la app se recargaba de inmediato, volviendo a ejecutar `onPageFinished` y entrando en un bucle destructivo cada 1 a 2 segundos.
+  3. **Omisión de Persistencia de la Versión Remota en `localStorage` antes de Descargar:**
+     - Al invocar `puente.descargarYActualizar()`, la app no guardaba la nueva versión remota en `localStorage`. Al recargar el WebView, la versión local seguía siendo la anterior (`1.0.0`), por lo que volvía a detectar que la versión remota (`1.0.1`) era mayor y solicitaba otra descarga de forma infinita.
+  4. **Comparación Floja por Timestamp o Desigualdad en Vez de Semver Estricto:**
+     - En `servicioActualizaciones.ts` se evaluaba `versionRemota.timestamp > versionLocal.timestamp` o `versionRemota.version !== versionLocal.version`, provocando descargas innecesarias cuando las versiones ya eran iguales o menores.
+  5. **Auto-actualización Inmediata en el Montaje de React:**
+     - En `visor-logs/src/App.tsx`, el `useEffect` principal invocaba `servicioActualizacionesTerminal.verificarYActualizarSilencioso()` sin esperar interacción ni aplicar un cooldown real.
+- **Solución Arquitectónica Aplicada:**
+  1. **Blindaje Nativo en Android ([`MainActivity.kt`](file:///d:/TaqueriaKm243/app/src/main/java/com/laestacion/grill/MainActivity.kt)):**
+     - **Cooldown Nativo:** Añadida variable `ultimaDescargaOtaMs`. Si ha transcurrido menos de 60 segundos desde la última descarga, se ignora cualquier solicitud.
+     - **Eliminación de Recargas ante Error:** Si la conexión falla o el código no es `200 OK`, el WebView **JAMÁS** se recarga; el usuario continúa operando con normalidad.
+     - **Eliminación de Llamadas Inmediatas:** Eliminado el disparo de `servicioActualizacionesAuto()` tanto de `onPageFinished` como de `onResume()`.
+  2. **Persistencia Preventiva y Cooldown en JavaScript ([`servicioActualizacionesTerminal.ts`](file:///d:/TaqueriaKm243/visor-logs/src/servicioActualizacionesTerminal.ts) y [`servicioActualizaciones.ts`](file:///d:/TaqueriaKm243/frontend/src/services/servicioActualizaciones.ts)):**
+     - **Guardado Inmediato:** Antes de delegar la descarga al puente nativo, se guarda la versión remota en `localStorage`.
+     - **Memoria de Recarga en `sessionStorage`:** Se registra `CLAVE_RECARGA_RECIENTE`. Si la app se recargó hace menos de 5 minutos, se aborta cualquier intento de actualización automática.
+     - **Comparación Semver Estricta:** Sólo se actualiza si `compararVersiones(remota, local) > 0`. Nunca por timestamp ni por simple diferencia.
+     - **Cooldown en Memoria:** 10 a 15 minutos entre comprobaciones automáticas no intrusivas en segundo plano.
+  3. **Desacoplamiento en la UI:**
+     - Removida la ejecución de OTA en el montaje inicial de `App.tsx` en `visor-logs`.
+  4. **Despliegue y Compilación:**
+     - Paquetes OTA actualizados y subidos a Supabase Storage.
+     - APKs nativos recompilados: [`TerminalAdmin-v1.0.0.apk`](file:///d:/TaqueriaKm243/TerminalAdmin-v1.0.0.apk) y [`LaEstacionGrill-v1.2.3.apk`](file:///d:/TaqueriaKm243/LaEstacionGrill-v1.2.3.apk).
+
+
+
+## 24. Investigación y Arquitectura Fiscal CFDI 4.0: Cadena Original y Sellos Digitales del SAT
+- **Contexto:** En el POS de Taquería Km 243 se capturan los datos fiscales del cliente (RFC, Razón Social, C.P., Régimen Fiscal, Uso CFDI) y el desglose de consumos (subtotal sin propina, IVA 16%). Se investigó el proceso criptográfico y fiscal exigido por el SAT para completar la emisión formal de la factura.
+- **Componentes Criptográficos del CFDI 4.0:**
+  1. **Cadena Original del Emisor:**
+     - Secuencia de texto normalizada delimitada por doble pleca (`||`), generada aplicando la transformación oficial XSLT del SAT (`cadenaoriginal_4_0.xslt`) sobre el XML de la factura.
+     - Contiene versión, fecha, folio, serie, importes, impuestos, emisor y receptor en estricto orden posicional sin espacios redundantes.
+  2. **Sello Digital del Emisor (Atributo `Sello` en el nodo raíz):**
+     - Firma digital creada por el restaurante. Se genera calculando el hash criptográfico SHA-256 de la Cadena Original y encriptándolo con la **Llave Privada (.key)** del **Certificado de Sello Digital (CSD)** del negocio.
+     - Se codifica en Base64. Da fe de la autoría e inalterabilidad del comprobante.
+  3. **Cadena Original del Timbre Fiscal Digital (TFD):**
+     - Cadena generada por el PAC que concatena la versión del timbre, el UUID asignado, la fecha de timbrado, el RFC del proveedor y el Sello del Emisor.
+  4. **Sello Digital del SAT (Atributo `SelloSAT` en el nodo TimbreFiscalDigital):**
+     - Firma electrónica emitida por el PAC o directamente por los servidores del SAT.
+     - Se encripta con el certificado de seguridad del SAT, confiriendo validez jurídica y fiscal ante Hacienda.
+- **Decisión Arquitectónica para Taquería Km 243:**
+  - **No implementar criptografía CSD en el Frontend:** Por seguridad (evitar exponer el archivo `.key` y contraseña del SAT en navegadores/tablets) y por normativa legal del SAT, el timbrado exige conexión a un **PAC (Proveedor Autorizado de Certificación)**.
+  - **Integración vía API REST de PAC:** Utilizar un servicio conector de timbrado (e.g., Facturapi, SW Sapien, Finkok o Factura.com) orquestado desde el backend seguro (servidor.js o Supabase Edge Functions).
+  - **Soporte de Auto-facturación:** Modelo preferente para hostelería donde el ticket térmico incluye un Folio de Facturación y código QR para que el comensal ingrese sus datos fiscales desde su celular y reciba el XML y PDF timbrados sin demorar la caja.
+
+## 25. Asistente de Facturación SAT y Enlace Directo (Solución sin PAC)
+- **Requerimiento:** Facilitarle al dueño del restaurante la emisión de facturas si no cuenta con un PAC de pago, proveyendo un enlace directo al portal oficial del SAT y transfiriendo o copiando toda la información fiscal necesaria con un solo clic.
+- **Implementación Técnica:**
+  1. **Constante y URL Oficial:** URL_PORTAL_SAT_CFDI = 'https://portalcfdi.facturaelectronica.sat.gob.mx/' en [servicioFacturacion.ts](file:///d:/TaqueriaKm243/frontend/src/services/servicioFacturacion.ts).
+  2. **Generador de Ficha Fiscal para el SAT:**
+     - Método generarFichaParaSat(factura) que estructura todos los campos en el orden exacto del formulario del SAT:
+       - Datos del Receptor: RFC, Razón Social, C.P., Régimen Fiscal, Uso de CFDI.
+       - Datos del Comprobante: Tipo de comprobante (I), Método (PUE), Forma de pago (01, 04, 28, etc.).
+       - Conceptos: Clave SAT 90101501 (Restaurantes), Clave Unidad E48, descripción, valor unitario sin IVA, desglose de IVA 16% trasladado y total.
+  3. **Panel Asistente SAT en Modal de Facturación ([ModalFacturacionSat.tsx](file:///d:/TaqueriaKm243/frontend/src/components/ModalFacturacionSat.tsx)):**
+     - Botón destacado con apertura en nueva pestaña: *"Abrir Portal Oficial del SAT"*.
+     - Botón *"Copiar Ficha para SAT"* que copia el resumen íntegro al portapapeles.
+     - Botones de copiado de 1-clic individuales por campo (RFC, Nombre, C.P., Régimen, Subtotal, IVA, etc.) con retroalimentación visual (¡Copiado!).
+     - Formulario para vincular el Folio Fiscal (UUID) una vez emitido en el SAT, actualizando la factura a estado 'timbrada'.
+  4. **Integración en Historial de Facturas ([ModalHistorialFacturas.tsx](file:///d:/TaqueriaKm243/frontend/src/components/ModalHistorialFacturas.tsx)):**
+     - Botón *"Portal SAT"* en la cabecera del modal para acceso rápido.
+     - Botón *"Ficha SAT"* en cada tarjeta de factura para copiar sus datos al instante.
+     - Opción de vincular UUID del SAT directamente sobre las facturas pendientes.
+  5. **Verificación:** Compilación con TypeScript estricto y Vite superada sin incidencias (pnpm build).

@@ -11,6 +11,9 @@ import {
   Share2,
   Copy,
   Check,
+  ExternalLink,
+  Building2,
+  BadgeCheck,
 } from 'lucide-react';
 import type { Cuenta } from '../types';
 import type { DatosReceptorFactura, FacturaRegistrada } from '../types/facturacion';
@@ -18,7 +21,10 @@ import {
   CATALOGO_REGIMENES_SAT,
   CATALOGO_USOS_CFDI_SAT,
 } from '../data/catalogosSat';
-import { servicioFacturacion } from '../services/servicioFacturacion';
+import {
+  servicioFacturacion,
+  URL_PORTAL_SAT_CFDI,
+} from '../services/servicioFacturacion';
 import { servicioEnvioCorreo } from '../services/servicioEnvioCorreo';
 import { formatearMoneda } from '../utils/formateadores';
 
@@ -70,6 +76,59 @@ export const ModalFacturacionSat: React.FC<PropsModalFacturacionSat> = ({
   const [guardando, setGuardando] = useState<boolean>(false);
   const [estadoEnvio, setEstadoEnvio] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<boolean>(false);
+  const [mostrarAsistenteSat, setMostrarAsistenteSat] = useState<boolean>(true);
+  const [campoCopiado, setCampoCopiado] = useState<string | null>(null);
+  const [uuidInput, setUuidInput] = useState<string>(facturaExistente?.uuidSat ?? '');
+  const [guardandoUuid, setGuardandoUuid] = useState<boolean>(false);
+  const [mensajeUuid, setMensajeUuid] = useState<string | null>(null);
+
+  const handleCopiarTexto = async (texto: string, claveCampo: string) => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCampoCopiado(claveCampo);
+      setTimeout(() => setCampoCopiado(null), 2000);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleCopiarFichaCompleta = async () => {
+    if (!facturaGuardada) return;
+    try {
+      const ficha = servicioFacturacion.generarFichaParaSat(facturaGuardada);
+      await navigator.clipboard.writeText(ficha);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleVincularUuidSat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!facturaGuardada) return;
+    const limpio = uuidInput.trim().toUpperCase();
+    if (limpio.length < 10) {
+      setMensajeUuid('Ingresa un Folio Fiscal (UUID) válido emitido por el SAT.');
+      return;
+    }
+
+    setGuardandoUuid(true);
+    setMensajeUuid(null);
+    try {
+      const actualizada = await servicioFacturacion.marcarFacturaTimbrada(facturaGuardada.id, limpio);
+      if (actualizada) {
+        setFacturaGuardada(actualizada);
+        setMensajeUuid('¡Factura marcada oficialmente como timbrada!');
+        if (onFacturaGuardada) onFacturaGuardada(actualizada);
+      }
+    } catch (err: unknown) {
+      console.error('[ModalFacturacionSat] Error al vincular UUID SAT:', err);
+      setMensajeUuid('Error al registrar el UUID del SAT.');
+    } finally {
+      setGuardandoUuid(false);
+    }
+  };
 
   // Desglose de impuestos (Regla SAT: la propina no causa IVA)
   const propina = cuenta.propina ?? 0;
@@ -371,6 +430,244 @@ export const ModalFacturacionSat: React.FC<PropsModalFacturacionSat> = ({
                   </button>
                 </div>
 
+                {/* Asistente y Enlace Directo al SAT (Sin PAC) */}
+                <div className="mt-3 pt-3 border-t border-stone-800/80 text-left space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs font-black uppercase tracking-wider text-amber-400">
+                        ¿Sin PAC contratado? Emite gratis en el SAT
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMostrarAsistenteSat(!mostrarAsistenteSat)}
+                      className="text-[11px] text-stone-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                    >
+                      {mostrarAsistenteSat ? 'Ocultar campos' : 'Ver campos del SAT'}
+                    </button>
+                  </div>
+
+                  {/* Acceso directo al Portal Oficial y Copia de Ficha */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <a
+                      href={URL_PORTAL_SAT_CFDI}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-600/30 to-amber-700/20 hover:from-amber-600/40 hover:to-amber-700/30 text-amber-300 border border-amber-500/40 text-xs font-black flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all active:scale-95 group"
+                    >
+                      <span>Abrir Portal Oficial del SAT</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={handleCopiarFichaCompleta}
+                      className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                      title="Copiar todos los datos con las etiquetas exactas del SAT"
+                    >
+                      {copiado ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
+                      <span>{copiado ? '¡Ficha Completa Copiada!' : 'Copiar Ficha para SAT'}</span>
+                    </button>
+                  </div>
+
+                  {/* Casillas individuales con botón Copiar de 1-clic */}
+                  {mostrarAsistenteSat && (
+                    <div className="bg-stone-950 border border-stone-800/90 rounded-2xl p-3 space-y-2 text-xs">
+                      <p className="text-[11px] text-stone-400 pb-1 border-b border-stone-800/80 flex items-center gap-1">
+                        <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        Toca el botón <Copy className="w-3 h-3 inline text-amber-400 mx-0.5" /> de cada campo para pegarlo en el formulario del SAT:
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {/* RFC */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">RFC Receptor:</span>
+                            <span className="font-mono font-bold text-amber-300">{facturaGuardada.receptor.rfc}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto(facturaGuardada.receptor.rfc, 'rfc')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
+                            title="Copiar RFC"
+                          >
+                            {campoCopiado === 'rfc' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* Nombre / Razón Social */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div className="truncate pr-1">
+                            <span className="text-[10px] text-stone-500 block">Nombre / Razón Social:</span>
+                            <span className="font-bold text-stone-200 truncate block">{facturaGuardada.receptor.razonSocial}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto(facturaGuardada.receptor.razonSocial, 'razonSocial')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors shrink-0"
+                            title="Copiar Nombre"
+                          >
+                            {campoCopiado === 'razonSocial' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* CP */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">C.P. Domicilio Fiscal:</span>
+                            <span className="font-mono font-bold text-stone-200">{facturaGuardada.receptor.codigoPostal}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto(facturaGuardada.receptor.codigoPostal, 'cp')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
+                            title="Copiar C.P."
+                          >
+                            {campoCopiado === 'cp' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* Régimen Fiscal */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Régimen Fiscal Receptor:</span>
+                            <span className="font-mono font-bold text-stone-200">{facturaGuardada.receptor.regimenFiscal}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto(facturaGuardada.receptor.regimenFiscal, 'regimen')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
+                            title="Copiar Régimen"
+                          >
+                            {campoCopiado === 'regimen' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* Uso CFDI */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Uso de CFDI:</span>
+                            <span className="font-mono font-bold text-stone-200">{facturaGuardada.receptor.usoCfdi}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto(facturaGuardada.receptor.usoCfdi, 'uso')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
+                            title="Copiar Uso CFDI"
+                          >
+                            {campoCopiado === 'uso' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* Clave Prod / Serv */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Clave SAT (Restaurantes):</span>
+                            <span className="font-mono font-bold text-stone-200">90101501 (E48)</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto('90101501', 'prod')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
+                            title="Copiar Clave SAT 90101501"
+                          >
+                            {campoCopiado === 'prod' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* Subtotal (Base Gravable) */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Valor Unitario (Base sin IVA):</span>
+                            <span className="font-mono font-bold text-emerald-400">${facturaGuardada.desglose.subtotalSinIva.toFixed(2)}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto(facturaGuardada.desglose.subtotalSinIva.toFixed(2), 'subtotal')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
+                            title="Copiar Subtotal"
+                          >
+                            {campoCopiado === 'subtotal' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* IVA Trasladado 16% */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-stone-900/80 border border-stone-800">
+                          <div>
+                            <span className="text-[10px] text-stone-500 block">Importe IVA Trasladado (16%):</span>
+                            <span className="font-mono font-bold text-blue-400">${facturaGuardada.desglose.iva16.toFixed(2)}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopiarTexto(facturaGuardada.desglose.iva16.toFixed(2), 'iva')}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
+                            title="Copiar Importe IVA"
+                          >
+                            {campoCopiado === 'iva' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Formulario para vincular el Folio Fiscal (UUID) una vez timbrada */}
+                  <div className="p-3 rounded-2xl bg-stone-950/90 border border-stone-800 space-y-2">
+                    {facturaGuardada.uuidSat ? (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <BadgeCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 block">
+                              Folio Fiscal (UUID SAT) Vinculado Oficialmente
+                            </span>
+                            <span className="font-mono text-xs font-bold text-stone-200 select-all">
+                              {facturaGuardada.uuidSat}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopiarTexto(facturaGuardada.uuidSat ?? '', 'uuidSat')}
+                          className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white"
+                          title="Copiar UUID"
+                        >
+                          {campoCopiado === 'uuidSat' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleVincularUuidSat} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-stone-300 flex items-center gap-1.5">
+                            <BadgeCheck className="w-3.5 h-3.5 text-amber-400" />
+                            ¿Ya timbraste en el SAT? Pega el Folio Fiscal (UUID):
+                          </label>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={uuidInput}
+                            onChange={(e) => setUuidInput(e.target.value.toUpperCase())}
+                            placeholder="Ej. 12345678-ABCD-1234-ABCD-1234567890AB"
+                            maxLength={36}
+                            className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-3 py-1.5 text-xs font-mono text-amber-300 uppercase placeholder-stone-600 focus:outline-hidden focus:border-amber-500"
+                          />
+                          <button
+                            type="submit"
+                            disabled={guardandoUuid || !uuidInput.trim()}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs cursor-pointer disabled:opacity-50 transition-all active:scale-95 shrink-0"
+                          >
+                            {guardandoUuid ? 'Guardando...' : 'Vincular UUID'}
+                          </button>
+                        </div>
+                        {mensajeUuid && (
+                          <p className="text-[11px] font-bold text-emerald-400 animate-in fade-in">{mensajeUuid}</p>
+                        )}
+                      </form>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
                   {onImprimirTicketFiscal && (
                     <button
@@ -395,6 +692,25 @@ export const ModalFacturacionSat: React.FC<PropsModalFacturacionSat> = ({
           ) : (
             /* Formulario de Captura Fiscal */
             <form onSubmit={handleConfirmarFactura} className="space-y-4">
+              {/* Aviso amigable para el dueño sin PAC */}
+              <div className="p-2.5 rounded-xl bg-stone-950/70 border border-stone-800 flex items-center justify-between text-xs text-stone-400">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    ¿No tienes PAC? Al guardar, obtendrás el <strong>enlace directo al SAT</strong> y botones de copiado 1-clic.
+                  </span>
+                </div>
+                <a
+                  href={URL_PORTAL_SAT_CFDI}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 shrink-0 ml-2 underline"
+                >
+                  <span>Portal SAT</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+
               {/* Tarjeta de Resumen de Consumo */}
               <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
                 <div>

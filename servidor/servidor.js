@@ -39,6 +39,7 @@ const servidorHttp = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
 
   if (url.pathname === '/api/ping' || url.pathname === '/ping') {
+    const ipCliente = req.socket.remoteAddress?.replace(/^.*:/, '') || '127.0.0.1';
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -46,6 +47,28 @@ const servidorHttp = http.createServer((req, res) => {
         servidor: 'LA ESTACIÓN GRILL SQL Server',
         motor: 'SQLite (better-sqlite3)',
         timestamp: new Date().toISOString(),
+        tuIp: ipCliente,
+      })
+    );
+    return;
+  }
+
+  if (url.pathname === '/api/dispositivos') {
+    const mapaIps = new Map();
+    for (const cliente of wss.clients) {
+      if (cliente.readyState === WebSocket.OPEN) {
+        const ip = cliente.ipCliente || '127.0.0.1';
+        const actual = mapaIps.get(ip) || { ip, sesiones: 0, conectadoEn: cliente.conectadoEn || new Date().toISOString() };
+        actual.sesiones++;
+        mapaIps.set(ip, actual);
+      }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        totalDispositivosUnicos: mapaIps.size,
+        totalSesiones: wss.clients.size,
+        dispositivos: Array.from(mapaIps.values()),
       })
     );
     return;
@@ -131,9 +154,23 @@ function retransmitir(mensajeObj, remitenteWs = null) {
   return enviados;
 }
 
+function obtenerTotalDispositivosUnicos() {
+  const ipsUnicas = new Set();
+  for (const cliente of wss.clients) {
+    if (cliente.readyState === WebSocket.OPEN) {
+      const ip = cliente.ipCliente || '127.0.0.1';
+      ipsUnicas.add(ip);
+    }
+  }
+  return Math.max(1, ipsUnicas.size);
+}
+
 wss.on('connection', (ws, req) => {
-  const ipCliente = req.socket.remoteAddress;
-  console.log(`[+] Dispositivo conectado desde ${ipCliente}. Total conectados: ${wss.clients.size}`);
+  const ipCliente = req.socket.remoteAddress?.replace(/^.*:/, '') || '127.0.0.1';
+  ws.ipCliente = ipCliente;
+  ws.conectadoEn = new Date().toISOString();
+  const totalUnicos = obtenerTotalDispositivosUnicos();
+  console.log(`[+] Dispositivo conectado desde ${ipCliente}. Únicos por IP: ${totalUnicos} (Sockets totales: ${wss.clients.size})`);
 
   ws.isAlive = true;
   ws.on('pong', () => {
@@ -150,7 +187,7 @@ wss.on('connection', (ws, req) => {
       remitenteId: 'servidor-sql',
       payload: {
         ...estadoSql,
-        clientesConectadosCount: wss.clients.size,
+        clientesConectadosCount: totalUnicos,
       },
     };
     ws.send(JSON.stringify(respuestaInicial));
@@ -158,13 +195,13 @@ wss.on('connection', (ws, req) => {
     console.error('[WebSocket] Error al enviar estado inicial de SQL:', err);
   }
 
-  // 2. Notificar a todos sobre la cantidad actualizada de terminales activas
+  // 2. Notificar a todos sobre la cantidad actualizada de terminales activas deduplicadas por IP
   retransmitir({
     id: `disp-${Date.now()}`,
     tipo: 'DISPOSITIVOS_ACTUALIZADOS',
     timestamp: new Date().toISOString(),
     remitenteId: 'servidor-sql',
-    payload: { clientesConectadosCount: wss.clients.size },
+    payload: { clientesConectadosCount: totalUnicos },
   });
 
   // 3. Procesar mensajes entrantes de tablets o celulares
@@ -322,13 +359,14 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    console.log(`[-] Dispositivo desconectado. Restantes: ${wss.clients.size}`);
+    const totalUnicos = obtenerTotalDispositivosUnicos();
+    console.log(`[-] Dispositivo desconectado (${ws.ipCliente || 'desconocido'}). Únicos restantes por IP: ${totalUnicos} (Sockets: ${wss.clients.size})`);
     retransmitir({
       id: `disp-${Date.now()}`,
       tipo: 'DISPOSITIVOS_ACTUALIZADOS',
       timestamp: new Date().toISOString(),
       remitenteId: 'servidor-sql',
-      payload: { clientesConectadosCount: wss.clients.size },
+      payload: { clientesConectadosCount: totalUnicos },
     });
   });
 

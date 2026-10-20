@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var dirWebLive: File
+    private var ultimaDescargaOtaMs: Long = 0L
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -153,13 +154,6 @@ class MainActivity : AppCompatActivity() {
                     if (rootInsets != null) {
                         aplicarMargenNotch(rootInsets)
                     }
-                    // Disparar comprobación de actualización automática en segundo plano
-                    view?.postDelayed({
-                        view.evaluateJavascript(
-                            "(function() { if (window.servicioActualizacionesAuto) { window.servicioActualizacionesAuto(); } })();",
-                            null
-                        )
-                    }, 400)
                 }
             }
 
@@ -198,6 +192,13 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun descargarYActualizar(urlZip: String?) {
+            val ahora = System.currentTimeMillis()
+            // Protección estricta contra bucles de descarga: mínimo 60 segundos entre intentos
+            if (ahora - ultimaDescargaOtaMs < 60_000L) {
+                return
+            }
+            ultimaDescargaOtaMs = ahora
+
             val urlFinal = if (urlZip.isNullOrBlank()) {
                 if (packageName.contains("terminal")) {
                     "https://idgyotujnoavliaqtuck.supabase.co/storage/v1/object/public/actualizaciones/terminal-bundle.zip"
@@ -210,10 +211,6 @@ class MainActivity : AppCompatActivity() {
 
             thread {
                 try {
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity, "Actualizando la aplicación...", Toast.LENGTH_SHORT).show()
-                    }
-
                     val conexion = URL(urlFinal).openConnection() as HttpURLConnection
                     conexion.connectTimeout = 8000
                     conexion.readTimeout = 15000
@@ -225,21 +222,16 @@ class MainActivity : AppCompatActivity() {
                         input.close()
 
                         runOnUiThread {
-                            Toast.makeText(this@MainActivity, "¡Aplicación lista y al día!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "¡Aplicación actualizada!", Toast.LENGTH_SHORT).show()
                             webView.clearCache(true)
                             webView.reload()
                         }
                     } else {
-                        runOnUiThread {
-                            webView.clearCache(true)
-                            webView.reload()
-                        }
+                        // NUNCA recargar ante respuestas no-OK para no interrumpir al usuario
+                        conexion.disconnect()
                     }
-                } catch (e: Exception) {
-                    runOnUiThread {
-                        webView.clearCache(true)
-                        webView.reload()
-                    }
+                } catch (_: Exception) {
+                    // NUNCA recargar ante excepciones de red para no crear bucles de recarga
                 }
             }
         }
@@ -424,15 +416,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         configurarPantallaCompletaInmersiva()
-        // Disparar comprobación de actualización automática cada vez que se entra o reanuda la app
-        if (this::webView.isInitialized) {
-            webView.postDelayed({
-                webView.evaluateJavascript(
-                    "(function() { if (window.servicioActualizacionesAuto) { window.servicioActualizacionesAuto(); } })();",
-                    null
-                )
-            }, 500)
-        }
     }
 
     @Deprecated("Deprecated in Java")

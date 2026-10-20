@@ -7,9 +7,17 @@ import {
   Mail,
   FileCheck,
   Share2,
+  ExternalLink,
+  Copy,
+  Check,
+  Building2,
+  BadgeCheck,
 } from 'lucide-react';
 import type { FacturaRegistrada } from '../types/facturacion';
-import { servicioFacturacion } from '../services/servicioFacturacion';
+import {
+  servicioFacturacion,
+  URL_PORTAL_SAT_CFDI,
+} from '../services/servicioFacturacion';
 import { servicioEnvioCorreo } from '../services/servicioEnvioCorreo';
 import { formatearMoneda } from '../utils/formateadores';
 import { useRestaurante } from '../context/RestauranteContext';
@@ -28,6 +36,31 @@ export const ModalHistorialFacturas: React.FC<PropsModalHistorialFacturas> = ({
     servicioFacturacion.obtenerFacturasLocales()
   );
   const [busqueda, setBusqueda] = useState<string>('');
+  const [idCopiado, setIdCopiado] = useState<string | null>(null);
+  const [facturaEditandoUuid, setFacturaEditandoUuid] = useState<string | null>(null);
+  const [uuidTemporal, setUuidTemporal] = useState<string>('');
+
+  const handleCopiarFichaSat = async (f: FacturaRegistrada) => {
+    try {
+      const ficha = servicioFacturacion.generarFichaParaSat(f);
+      await navigator.clipboard.writeText(ficha);
+      setIdCopiado(f.id);
+      setTimeout(() => setIdCopiado(null), 2500);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleGuardarUuidDirecto = async (f: FacturaRegistrada) => {
+    const limpio = uuidTemporal.trim().toUpperCase();
+    if (limpio.length < 10) return;
+    const actualizada = await servicioFacturacion.marcarFacturaTimbrada(f.id, limpio);
+    if (actualizada) {
+      setFacturas(servicioFacturacion.obtenerFacturasLocales());
+      setFacturaEditandoUuid(null);
+      setUuidTemporal('');
+    }
+  };
 
   useEffect(() => {
     setFacturas(servicioFacturacion.obtenerFacturasLocales());
@@ -107,13 +140,27 @@ export const ModalHistorialFacturas: React.FC<PropsModalHistorialFacturas> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href={URL_PORTAL_SAT_CFDI}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-1.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer group"
+              title="Abrir la plataforma gratuita de facturación CFDI 4.0 del SAT"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Portal SAT</span>
+              <ExternalLink className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+            </a>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Resumen de facturación */}
@@ -259,6 +306,16 @@ export const ModalHistorialFacturas: React.FC<PropsModalHistorialFacturas> = ({
 
                     <button
                       type="button"
+                      onClick={() => handleCopiarFichaSat(f)}
+                      className="py-1.5 px-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                      title="Copiar todos los datos con formato exacto para pegar en el SAT"
+                    >
+                      {idCopiado === f.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{idCopiado === f.id ? '¡Ficha Copiada!' : 'Ficha SAT'}</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleReimprimirTicket(f)}
                       className="py-1.5 px-2.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer border border-stone-700"
                       title="Imprimir ticket con desglose fiscal"
@@ -267,6 +324,61 @@ export const ModalHistorialFacturas: React.FC<PropsModalHistorialFacturas> = ({
                       <span>Ticket Fiscal</span>
                     </button>
                   </div>
+                </div>
+
+                {/* Folio Fiscal (UUID) o Formulario para vincularlo */}
+                <div className="mt-2.5 pt-2 border-t border-stone-800/60 text-xs">
+                  {f.uuidSat ? (
+                    <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px]">
+                      <BadgeCheck className="w-4 h-4 shrink-0" />
+                      <span>UUID SAT:</span>
+                      <strong className="text-stone-300 select-all">{f.uuidSat}</strong>
+                    </div>
+                  ) : facturaEditandoUuid === f.id ? (
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="text"
+                        value={uuidTemporal}
+                        onChange={(e) => setUuidTemporal(e.target.value.toUpperCase())}
+                        placeholder="Pega el Folio Fiscal UUID emitido por el SAT..."
+                        className="flex-1 bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1 text-xs font-mono text-amber-300 placeholder-stone-600 focus:outline-hidden focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleGuardarUuidDirecto(f)}
+                        disabled={!uuidTemporal.trim()}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs disabled:opacity-50 transition-all cursor-pointer"
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFacturaEditandoUuid(null);
+                          setUuidTemporal('');
+                        }}
+                        className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 text-xs cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-stone-500 italic">
+                        Sin timbrar ante el SAT aún.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFacturaEditandoUuid(f.id);
+                          setUuidTemporal('');
+                        }}
+                        className="text-[11px] text-amber-400 hover:text-amber-300 underline font-bold cursor-pointer"
+                      >
+                        + Vincular UUID del SAT
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))

@@ -1,0 +1,7 @@
+{
+  "version": "1.0.1",
+  "nombre": "Terminal Auditoría y Logs - La Estación Grill",
+  "timestamp": 1792424000000,
+  "fecha": "19/10/2026",
+  "notas": "Detección de dispositivos completados y deduplicación por IP / dirección de red."
+}

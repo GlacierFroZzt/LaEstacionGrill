@@ -1,6 +1,7 @@
 export type NivelLog = 'CRASH' | 'ERROR' | 'WARN' | 'INFO';
 
 export interface DetallesLog {
+  ip?: string;
   stack?: string;
   componentStack?: string;
   origenError?: string;
@@ -8,6 +9,7 @@ export interface DetallesLog {
   linea?: number;
   columna?: number;
   userAgent?: string;
+  plataforma?: string;
   url?: string;
   timestampMs?: number;
   errorOriginal?: string;
@@ -38,4 +40,30 @@ export interface FiltroLogs {
   nivel: NivelLog | 'TODOS';
   dispositivoId: string;
   rangoFecha: 'hoy' | '24h' | '7dias' | 'todos';
+}
+
+export interface DetallePresencia {
+  key: string;
+  dispositivoId: string;
+  ip?: string;
+  plataforma?: string;
+  userAgent?: string;
+  conectadoEn?: string;
+  rol?: string;
+}
+
+export interface InfoDispositivoUnificado {
+  clave: string;
+  direccionIp: string | null;
+  idsDispositivo: string[];
+  nombrePrincipal: string;
+  plataforma: string;
+  userAgent?: string;
+  enLinea: boolean;
+  sesionesActivas: number;
+  ultimaActividad: string;
+  totalLogs: number;
+  totalCrashes: number;
+  totalErrores: number;
+  esMismoDispositivoActual?: boolean;
 }

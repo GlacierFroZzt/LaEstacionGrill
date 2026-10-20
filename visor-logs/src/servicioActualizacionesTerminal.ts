@@ -1,7 +1,7 @@
 /**
  * TAQUERÍA KM 243 / LA ESTACIÓN GRILL
  * Servicio de Actualizaciones Automáticas OTA para la Terminal de Auditoría y Logs.
- * Gestiona la detección, descarga y aplicación en caliente de nuevas versiones de la Terminal.
+ * Gestiona la detección, descarga y aplicación segura sin bucles de recarga.
  */
 
 export interface InformacionVersionTerminal {
@@ -35,13 +35,14 @@ declare global {
 }
 
 const CLAVE_STORAGE_VERSION = 'taqueria_terminal_version_instalada';
+const CLAVE_RECARGA_RECIENTE = 'taqueria_terminal_ultima_recarga_ota';
 
 export const VERSION_TERMINAL_LOCAL: InformacionVersionTerminal = {
-  version: '1.0.0',
+  version: '1.0.1',
   nombre: 'TERMINAL ADMIN - LA ESTACIÓN GRILL',
-  timestamp: Date.now(),
-  fecha: new Date().toLocaleDateString('es-MX'),
-  notas: 'Monitoreo en tiempo real, presencia activa y protección de notch.',
+  timestamp: 1792424000000,
+  fecha: '19/10/2026',
+  notas: 'Monitoreo en tiempo real, presencia activa, deduplicación de IP y protección de notch.',
 };
 
 export const URL_VERSION_TERMINAL_SUPABASE =
@@ -56,27 +57,16 @@ export class ServicioActualizacionesTerminal {
 
   private constructor() {
     if (typeof window !== 'undefined') {
-      // Registrar función global invocada por MainActivity.kt en onPageFinished
+      // Registrar función global para comprobación silenciosa controlada
       window.servicioActualizacionesAuto = () => {
+        // Ejecutar sólo si no se ha comprobado recientemente
         this.verificarYActualizarSilencioso();
       };
 
-      // 1. Al recuperar conexión de red, comprobar actualización automáticamente
-      window.addEventListener('online', () => {
-        setTimeout(() => this.verificarYActualizarSilencioso(), 2000);
-      });
-
-      // 2. Al volver a la app tras suspensión o bloqueo
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          setTimeout(() => this.verificarYActualizarSilencioso(), 1500);
-        }
-      });
-
-      // 3. Chequeo periódico cada 5 minutos
+      // 1. Chequeo periódico no intrusivo cada 15 minutos
       setInterval(() => {
         this.verificarYActualizarSilencioso();
-      }, 5 * 60 * 1000);
+      }, 15 * 60 * 1000);
     }
   }
 
@@ -92,7 +82,10 @@ export class ServicioActualizacionesTerminal {
     try {
       const guardada = localStorage.getItem(CLAVE_STORAGE_VERSION);
       if (guardada) {
-        return JSON.parse(guardada) as InformacionVersionTerminal;
+        const parsed = JSON.parse(guardada) as InformacionVersionTerminal;
+        if (parsed?.version) {
+          return parsed;
+        }
       }
     } catch {
       // Ignorar error de parsing
@@ -105,18 +98,36 @@ export class ServicioActualizacionesTerminal {
     try {
       localStorage.setItem(CLAVE_STORAGE_VERSION, JSON.stringify(info));
     } catch {
-      // Ignorar error de almacenamiento
+      // Ignorar error de cuota en storage
     }
   }
 
   public async verificarActualizacion(): Promise<ResultadoVerificacionOtaTerminal> {
-    const versionLocal = this.obtenerVersionInstalada();
+    let versionLocal = this.obtenerVersionInstalada();
+
+    // Intentar leer el archivo terminal-version.json local de los assets
+    try {
+      const respLocal = await fetch(`./terminal-version.json?_t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (respLocal.ok) {
+        const infoLocalArchivo = (await respLocal.json()) as InformacionVersionTerminal;
+        if (infoLocalArchivo?.version) {
+          if (this.compararVersiones(infoLocalArchivo.version, versionLocal.version) >= 0) {
+            versionLocal = infoLocalArchivo;
+            this.guardarVersionInstalada(versionLocal);
+          }
+        }
+      }
+    } catch {
+      // Fallback silencioso a la versión local
+    }
 
     try {
       const urlConsulta = `${URL_VERSION_TERMINAL_SUPABASE}?_t=${Date.now()}`;
       const respuesta = await fetch(urlConsulta, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' },
+        headers: { 'Cache-Control': 'no-cache, no-store' },
       });
 
       if (!respuesta.ok) {
@@ -129,10 +140,10 @@ export class ServicioActualizacionesTerminal {
 
       const infoRemota = (await respuesta.json()) as InformacionVersionTerminal;
 
+      // Comparación semver estricta: sólo hay actualización si la versión remota es estrictamente superior
       const esSuperior = this.compararVersiones(infoRemota.version, versionLocal.version) > 0;
-      const tieneTimestampNuevo = (infoRemota.timestamp || 0) > (versionLocal.timestamp || 0);
 
-      if (esSuperior || (infoRemota.version === versionLocal.version && tieneTimestampNuevo)) {
+      if (esSuperior) {
         return {
           hayActualizacion: true,
           versionActual: versionLocal.version,
@@ -142,13 +153,16 @@ export class ServicioActualizacionesTerminal {
         };
       }
 
+      // Si la versión es igual o menor, aseguramos que la local quede sincronizada
+      this.guardarVersionInstalada(infoRemota);
+
       return {
         hayActualizacion: false,
         versionActual: versionLocal.version,
         mensaje: 'La Terminal está al día.',
       };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      const msg = err instanceof Error ? err.message : 'Error de conexión';
       return {
         hayActualizacion: false,
         versionActual: versionLocal.version,
@@ -160,11 +174,30 @@ export class ServicioActualizacionesTerminal {
   public async aplicarActualizacion(): Promise<void> {
     try {
       const resultado = await this.verificarActualizacion();
-      if (!resultado.hayActualizacion) return;
+      if (!resultado.hayActualizacion || !resultado.versionRemota) return;
+
+      // 1. Guardar INMEDIATAMENTE la versión remota antes de descargar o recargar
+      const infoActualizada: InformacionVersionTerminal = {
+        version: resultado.versionRemota,
+        nombre: 'TERMINAL ADMIN - LA ESTACIÓN GRILL',
+        timestamp: Date.now(),
+        fecha: new Date().toLocaleDateString('es-MX'),
+        notas: resultado.notas || '',
+      };
+      this.guardarVersionInstalada(infoActualizada);
+
+      // 2. Marcar en sessionStorage que ya se realizó una recarga por OTA recientemente
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(CLAVE_RECARGA_RECIENTE, Date.now().toString());
+        } catch {
+          // Ignorar
+        }
+      }
 
       const puente = window.AndroidOtaBridge;
       if (puente && typeof puente.descargarYActualizar === 'function') {
-        // En Android WebView nativo delegamos al puente OTA en segundo plano
+        // En Android WebView nativo delegamos al puente OTA
         puente.descargarYActualizar(URL_BUNDLE_TERMINAL_SUPABASE);
       } else {
         // En navegador web limpiamos caché y recargamos
@@ -181,9 +214,27 @@ export class ServicioActualizacionesTerminal {
 
   public async verificarYActualizarSilencioso(): Promise<boolean> {
     const ahora = Date.now();
-    if (this.autodescargaEnCurso || ahora - this.ultimoChequeoAuto < 20000) {
+
+    // 1. Cooldown en memoria de 10 minutos entre comprobaciones automáticas
+    if (this.autodescargaEnCurso || ahora - this.ultimoChequeoAuto < 10 * 60 * 1000) {
       return false;
     }
+
+    // 2. Cooldown persistente en sessionStorage: Si se recargó hace menos de 5 minutos, bloquear
+    if (typeof window !== 'undefined') {
+      try {
+        const ultimaRecargaStr = sessionStorage.getItem(CLAVE_RECARGA_RECIENTE);
+        if (ultimaRecargaStr) {
+          const ultimaRecarga = parseInt(ultimaRecargaStr, 10);
+          if (ahora - ultimaRecarga < 5 * 60 * 1000) {
+            return false;
+          }
+        }
+      } catch {
+        // Ignorar
+      }
+    }
+
     this.ultimoChequeoAuto = ahora;
 
     try {
@@ -196,6 +247,8 @@ export class ServicioActualizacionesTerminal {
       }
     } catch (e: unknown) {
       console.warn('[ServicioActualizacionesTerminal] Error silencioso:', e);
+    } finally {
+      this.autodescargaEnCurso = false;
     }
     return false;
   }

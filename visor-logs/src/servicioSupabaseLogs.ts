@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import type { RegistroLog } from './types';
+import type { RegistroLog, DetallePresencia } from './types';
 
 export class ServicioSupabaseLogs {
   private static instancia: ServicioSupabaseLogs | null = null;
@@ -125,10 +125,10 @@ export class ServicioSupabaseLogs {
   }
 
   /**
-   * Suscribe al canal de Presencia global para detectar qué dispositivos están en línea en vivo.
+   * Suscribe al canal de Presencia global para detectar qué dispositivos están en línea en vivo con sus IPs.
    */
   public suscribirPresencia(
-    onPresenciaActualizada: (dispositivosEnLinea: string[]) => void
+    onPresenciaActualizada: (presenciasEnLinea: DetallePresencia[]) => void
   ): () => void {
     if (this.canalPresencia) {
       this.cliente.removeChannel(this.canalPresencia);
@@ -140,10 +140,23 @@ export class ServicioSupabaseLogs {
     const actualizarPresencia = (): void => {
       try {
         const state = this.canalPresencia?.presenceState() || {};
-        const dispositivos = Object.keys(state).filter(
-          (k) => !k.startsWith('admin-consola')
-        );
-        onPresenciaActualizada(dispositivos);
+        const listaPresencias: DetallePresencia[] = [];
+        for (const [key, presencias] of Object.entries(state)) {
+          if (key.startsWith('admin-consola')) continue;
+          const items = (presencias as Array<Partial<DetallePresencia>>) || [];
+          for (const item of items) {
+            listaPresencias.push({
+              key,
+              dispositivoId: item.dispositivoId || key,
+              ip: item.ip,
+              plataforma: item.plataforma,
+              userAgent: item.userAgent,
+              conectadoEn: item.conectadoEn,
+              rol: item.rol,
+            });
+          }
+        }
+        onPresenciaActualizada(listaPresencias);
       } catch (err: unknown) {
         console.warn('[Presencia] Error al procesar estado de presencia:', err);
       }

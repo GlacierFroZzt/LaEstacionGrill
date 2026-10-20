@@ -1,4 +1,5 @@
 import { servicioSupabase } from './servicioSupabase';
+import { servicioDeteccionIp } from './servicioDeteccionIp';
 
 export type NivelLog = 'CRASH' | 'ERROR' | 'WARN' | 'INFO';
 
@@ -26,11 +27,13 @@ export class ServicioTelemetria {
     this.configurarEventosRed();
 
     // Procesar cola pendiente inmediatamente tras la inicializacion
-    setTimeout(() => {
+    setTimeout(async () => {
       this.procesarColaPendiente();
+      const ip = await servicioDeteccionIp.obtenerIp();
       // Registrar log informativo de dispositivo conectado para que aparezca de inmediato en la terminal
       this.registrarInfo(`Dispositivo conectado al restaurante`, {
         tipo: 'inicio_sesion',
+        ip: ip || 'desconocido',
         plataforma: typeof navigator !== 'undefined' ? navigator.platform : 'web',
         resolucion: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : 'N/A',
         modoPWA: typeof window !== 'undefined' ? window.matchMedia('(display-mode: standalone)').matches : false,
@@ -130,6 +133,7 @@ export class ServicioTelemetria {
         mensaje,
         detalles: {
           ...detalles,
+          ip: detalles.ip || servicioDeteccionIp.obtenerIpCache() || 'desconocido',
           userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A',
           url: typeof window !== 'undefined' ? window.location.href : 'N/A',
           timestampMs: Date.now(),

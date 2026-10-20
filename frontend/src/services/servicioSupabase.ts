@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import type { Mesa, Cuenta, PedidoCocina, CorteCaja, TurnoCerrado } from '../types';
 import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
+import { servicioDeteccionIp } from './servicioDeteccionIp';
 
 export interface AccionOffline {
   id: string;
@@ -221,7 +222,19 @@ class ServicioSupabase {
           if (!this.canal) return;
           try {
             const estadoPresencia = this.canal.presenceState();
-            const totalDispositivos = Math.max(1, Object.keys(estadoPresencia).length);
+            // Deduplicación por IP: si dos conexiones tienen la misma IP, no contarlas como 2 distintas
+            const ipsOIdsUnicos = new Set<string>();
+            for (const [key, presencias] of Object.entries(estadoPresencia)) {
+              if (key.startsWith('admin-consola')) continue;
+              const lista = (presencias as Array<{ ip?: string }>) || [];
+              const ip = lista[0]?.ip;
+              if (ip && ip !== 'desconocido' && ip !== '127.0.0.1' && ip !== '::1') {
+                ipsOIdsUnicos.add(`ip:${ip}`);
+              } else {
+                ipsOIdsUnicos.add(`id:${key}`);
+              }
+            }
+            const totalDispositivos = Math.max(1, ipsOIdsUnicos.size);
             this.notificarListeners('DISPOSITIVOS_ACTUALIZADOS', {
               clientesConectadosCount: totalDispositivos,
             });
@@ -300,11 +313,16 @@ class ServicioSupabase {
             this.intentosReconexion = 0;
             this.notificarListeners('ESTADO_CONEXION_ACTUALIZADO', { conectado: true });
 
-            // Rastrear la presencia de este dispositivo en Supabase
+            // Rastrear la presencia de este dispositivo en Supabase con IP y plataforma
             try {
+              const ip = await servicioDeteccionIp.obtenerIp();
               await this.canal?.track({
                 dispositivoId: this.idDispositivo,
+                ip: ip || 'desconocido',
+                plataforma: typeof navigator !== 'undefined' ? navigator.platform : 'web',
+                userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
                 conectadoEn: new Date().toISOString(),
+                rol: 'punto-de-venta',
               });
             } catch (errPresencia: unknown) {
               console.warn('[ServicioSupabase] No se pudo registrar presencia inicial:', errPresencia);

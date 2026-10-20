@@ -25,16 +25,19 @@ interface AndroidOtaBridgeInterface {
 declare global {
   interface Window {
     AndroidOtaBridge?: AndroidOtaBridgeInterface;
+    servicioActualizacionesAuto?: () => void;
   }
 }
 
 const CLAVE_STORAGE_VERSION = 'taqueria_km243_version_instalada';
+const CLAVE_RECARGA_RECIENTE = 'taqueria_frontend_ultima_recarga_ota';
+
 export const VERSION_LOCAL_POR_DEFECTO: InformacionVersion = {
-  version: '1.0.1',
+  version: '1.2.3',
   nombre: 'LA ESTACIÓN GRILL',
-  timestamp: 1792289900000,
-  fecha: '18 de octubre de 2026',
-  notas: 'Pantalla de inicio rápida, optimizaciones de fluidez y mejoras continuas de servicio.',
+  timestamp: 1792340000000,
+  fecha: '19 de octubre de 2026',
+  notas: 'Notificaciones nativas, presencia activa, deduplicación de IP y sincronización robusta.',
 };
 
 export const URL_VERSION_SUPABASE =
@@ -49,22 +52,14 @@ export class ServicioActualizaciones {
 
   private constructor() {
     if (typeof window !== 'undefined') {
-      // 1. Al recuperar conexión de red, comprobar actualización automáticamente
-      window.addEventListener('online', () => {
-        setTimeout(() => this.verificarYActualizarSilencioso(), 2000);
-      });
+      window.servicioActualizacionesAuto = () => {
+        this.verificarYActualizarSilencioso();
+      };
 
-      // 2. Al reanudar la app tras suspensión o bloqueo de pantalla
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          setTimeout(() => this.verificarYActualizarSilencioso(), 1500);
-        }
-      });
-
-      // 3. Chequeo periódico cada 10 minutos en segundo plano
+      // Chequeo periódico no intrusivo cada 15 minutos
       setInterval(() => {
         this.verificarYActualizarSilencioso();
-      }, 10 * 60 * 1000);
+      }, 15 * 60 * 1000);
     }
   }
 
@@ -76,14 +71,29 @@ export class ServicioActualizaciones {
   }
 
   /**
-   * Comprueba en segundo plano si hay una nueva versión en Supabase y la descarga
-   * e instala de inmediato de forma 100% automática y transparente sin intervención del usuario.
+   * Comprueba en segundo plano si hay una nueva versión y la aplica de forma segura sin bucles.
    */
   public async verificarYActualizarSilencioso(): Promise<boolean> {
     const ahora = Date.now();
-    // Prevenir ejecuciones repetitivas si ya se comprobó hace menos de 25 segundos o si una descarga está en progreso
-    if (this.autodescargaEnCurso || ahora - this.ultimoChequeoAuto < 25000) {
+
+    // 1. Cooldown de 10 minutos entre comprobaciones automáticas
+    if (this.autodescargaEnCurso || ahora - this.ultimoChequeoAuto < 10 * 60 * 1000) {
       return false;
+    }
+
+    // 2. Cooldown persistente en sessionStorage: Si se recargó hace menos de 5 minutos, abortar
+    if (typeof window !== 'undefined') {
+      try {
+        const ultimaRecargaStr = sessionStorage.getItem(CLAVE_RECARGA_RECIENTE);
+        if (ultimaRecargaStr) {
+          const ultimaRecarga = parseInt(ultimaRecargaStr, 10);
+          if (ahora - ultimaRecarga < 5 * 60 * 1000) {
+            return false;
+          }
+        }
+      } catch {
+        // Ignorar
+      }
     }
 
     this.ultimoChequeoAuto = ahora;
@@ -91,13 +101,14 @@ export class ServicioActualizaciones {
     try {
       const res = await this.verificarActualizacion();
       if (res.hayActualizacion) {
-        console.log(`[ServicioActualizaciones] 🔥 Nueva versión v${res.versionRemota} detectada en la nube. Aplicando actualización automática...`);
+        console.log(`[ServicioActualizaciones] Nueva versión v${res.versionRemota} detectada.`);
         this.autodescargaEnCurso = true;
         await this.aplicarActualizacion();
         return true;
       }
     } catch (e) {
-      console.warn('[ServicioActualizaciones] Error en actualización automática silenciosa:', e);
+      console.warn('[ServicioActualizaciones] Error en actualización silenciosa:', e);
+    } finally {
       this.autodescargaEnCurso = false;
     }
     return false;
@@ -110,7 +121,10 @@ export class ServicioActualizaciones {
     try {
       const guardada = localStorage.getItem(CLAVE_STORAGE_VERSION);
       if (guardada) {
-        return JSON.parse(guardada) as InformacionVersion;
+        const parsed = JSON.parse(guardada) as InformacionVersion;
+        if (parsed?.version) {
+          return parsed;
+        }
       }
     } catch (e) {
       console.warn('[ServicioActualizaciones] Error al leer versión local:', e);
@@ -126,8 +140,7 @@ export class ServicioActualizaciones {
   }
 
   /**
-   * Consulta el archivo version.json local para saber la versión instalada y lo compara
-   * con la versión remota oficial en Supabase Storage.
+   * Consulta el archivo version.json local y lo compara con la versión remota de Supabase.
    */
   public async verificarActualizacion(): Promise<ResultadoVerificacionOta> {
     const timestampConsulta = Date.now();
@@ -139,11 +152,16 @@ export class ServicioActualizaciones {
         cache: 'no-store',
       });
       if (respLocal.ok) {
-        versionLocal = (await respLocal.json()) as InformacionVersion;
-        try {
-          localStorage.setItem(CLAVE_STORAGE_VERSION, JSON.stringify(versionLocal));
-        } catch {
-          // Ignorar error de cuota en storage
+        const infoLocalArchivo = (await respLocal.json()) as InformacionVersion;
+        if (infoLocalArchivo?.version) {
+          if (this.compararVersiones(infoLocalArchivo.version, versionLocal.version) >= 0) {
+            versionLocal = infoLocalArchivo;
+            try {
+              localStorage.setItem(CLAVE_STORAGE_VERSION, JSON.stringify(versionLocal));
+            } catch {
+              // Ignorar
+            }
+          }
         }
       }
     } catch (errLocal) {
@@ -151,7 +169,7 @@ export class ServicioActualizaciones {
     }
 
     try {
-      // 2. Consultar la versión remota disponible en la nube de Supabase
+      // 2. Consultar la versión remota disponible en Supabase Storage
       let versionRemota: InformacionVersion = versionLocal;
       try {
         const respRemota = await fetch(`${URL_VERSION_SUPABASE}?_t=${timestampConsulta}`, {
@@ -168,19 +186,30 @@ export class ServicioActualizaciones {
         console.warn('[ServicioActualizaciones] Supabase no respondió a la consulta de versión:', errSupabase);
       }
 
-      // Si el timestamp o número de versión remoto es superior, hay actualización
-      const hayNueva =
-        versionRemota.timestamp > versionLocal.timestamp ||
-        versionRemota.version !== versionLocal.version;
+      // Comparación semver estricta: sólo hay actualización si la versión remota es estrictamente superior
+      const esSuperior = this.compararVersiones(versionRemota.version, versionLocal.version) > 0;
+
+      if (esSuperior) {
+        return {
+          hayActualizacion: true,
+          versionActual: versionLocal.version,
+          versionRemota: versionRemota.version,
+          notas: versionRemota.notas,
+          mensaje: `Nueva versión ${versionRemota.version} disponible (${versionRemota.fecha}).`,
+        };
+      }
+
+      // Si la versión es igual o menor, aseguramos que la local quede sincronizada
+      try {
+        localStorage.setItem(CLAVE_STORAGE_VERSION, JSON.stringify(versionRemota));
+      } catch {
+        // Ignorar
+      }
 
       return {
-        hayActualizacion: hayNueva,
+        hayActualizacion: false,
         versionActual: versionLocal.version,
-        versionRemota: versionRemota.version,
-        notas: versionRemota.notas,
-        mensaje: hayNueva
-          ? `Nueva versión ${versionRemota.version} disponible (${versionRemota.fecha}).`
-          : `La aplicación está al día con la versión ${versionLocal.version}.`,
+        mensaje: `La aplicación está al día con la versión ${versionLocal.version}.`,
       };
     } catch (error) {
       console.error('[ServicioActualizaciones] Error al verificar versión:', error);
@@ -193,12 +222,31 @@ export class ServicioActualizaciones {
   }
 
   /**
-   * Aplica la actualización en caliente:
-   * - En Android: Invoca el puente nativo para descargar de Supabase Storage y reemplazar assets sin reinstalar APK.
-   * - En Web/PWA: Limpia los caches de almacenamiento y recarga la página.
+   * Aplica la actualización en caliente de forma segura guardando la versión previamente.
    */
   public async aplicarActualizacion(): Promise<void> {
     try {
+      const resultado = await this.verificarActualizacion();
+      if (!resultado.hayActualizacion || !resultado.versionRemota) return;
+
+      // 1. Guardar INMEDIATAMENTE en localStorage antes de que recargue
+      const infoActualizada: InformacionVersion = {
+        ...VERSION_LOCAL_POR_DEFECTO,
+        version: resultado.versionRemota,
+        timestamp: Date.now(),
+        notas: resultado.notas || '',
+      };
+      localStorage.setItem(CLAVE_STORAGE_VERSION, JSON.stringify(infoActualizada));
+
+      // 2. Marcar en sessionStorage para proteger contra bucles de recarga
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(CLAVE_RECARGA_RECIENTE, Date.now().toString());
+        } catch {
+          // Ignorar
+        }
+      }
+
       if (typeof window !== 'undefined' && window.AndroidOtaBridge?.descargarYActualizar) {
         console.log('[ServicioActualizaciones] Delegando actualización a Supabase Storage mediante puente nativo...');
         window.AndroidOtaBridge.descargarYActualizar(URL_BUNDLE_SUPABASE);
@@ -211,23 +259,24 @@ export class ServicioActualizaciones {
         await Promise.all(nombresCache.map((nombre) => caches.delete(nombre)));
       }
 
-      // Guardar la versión más reciente consultada
-      const resultado = await this.verificarActualizacion();
-      if (resultado.versionRemota) {
-        const infoActualizada: InformacionVersion = {
-          ...VERSION_LOCAL_POR_DEFECTO,
-          version: resultado.versionRemota,
-          timestamp: Date.now(),
-        };
-        localStorage.setItem(CLAVE_STORAGE_VERSION, JSON.stringify(infoActualizada));
-      }
-
-      // Forzar recarga sin caché
       window.location.reload();
     } catch (e) {
       console.error('[ServicioActualizaciones] Error al aplicar actualización:', e);
-      window.location.reload();
     }
+  }
+
+  private compararVersiones(v1: string, v2: string): number {
+    const partes1 = v1.split('.').map((n) => parseInt(n, 10) || 0);
+    const partes2 = v2.split('.').map((n) => parseInt(n, 10) || 0);
+    const len = Math.max(partes1.length, partes2.length);
+
+    for (let i = 0; i < len; i++) {
+      const num1 = partes1[i] ?? 0;
+      const num2 = partes2[i] ?? 0;
+      if (num1 > num2) return 1;
+      if (num1 < num2) return -1;
+    }
+    return 0;
   }
 }
 

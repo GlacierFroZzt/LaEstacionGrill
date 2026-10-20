@@ -21,10 +21,32 @@ import {
   BellOff,
   Tablet,
   Sparkles,
+  Globe,
+  Smartphone,
+  Monitor,
+  Layers,
+  Eye,
 } from 'lucide-react';
 import { servicioSupabaseLogs } from './servicioSupabaseLogs';
 import { servicioActualizacionesTerminal } from './servicioActualizacionesTerminal';
-import type { RegistroLog, NivelLog, FiltroLogs, EstadisticasLogs } from './types';
+import type {
+  RegistroLog,
+  NivelLog,
+  FiltroLogs,
+  EstadisticasLogs,
+  DetallePresencia,
+  InfoDispositivoUnificado,
+} from './types';
+
+function deducirPlataforma(ua?: string): string {
+  if (!ua) return 'Web / Navegador';
+  if (/android/i.test(ua)) return 'Android';
+  if (/iphone|ipad|ipod/i.test(ua)) return 'iOS (Apple)';
+  if (/windows/i.test(ua)) return 'Windows PC';
+  if (/macintosh|mac os x/i.test(ua)) return 'macOS';
+  if (/linux/i.test(ua)) return 'Linux';
+  return 'Navegador Web';
+}
 
 const SQL_ESQUEMA_LOGS = `-- TAQUERÍA KM 243 / LA ESTACIÓN GRILL
 -- TABLA DE REGISTROS DEL SISTEMA, AUDITORÍA Y CRASH REPORTING
@@ -82,7 +104,8 @@ export const App: React.FC = () => {
   const [sonidoHabilitado, setSonidoHabilitado] = useState<boolean>(true);
   const [tablaNoExiste, setTablaNoExiste] = useState<boolean>(false);
   const [mostrarSqlModal, setMostrarSqlModal] = useState<boolean>(false);
-  const [dispositivosEnLinea, setDispositivosEnLinea] = useState<string[]>([]);
+  const [presenciasEnLinea, setPresenciasEnLinea] = useState<DetallePresencia[]>([]);
+  const [modalDispositivosAbierto, setModalDispositivosAbierto] = useState<boolean>(false);
   const [comprobandoOta, setComprobandoOta] = useState<boolean>(false);
   const [mensajeOta, setMensajeOta] = useState<string | null>(null);
   const [ultimaSincronizacion, setUltimaSincronizacion] = useState<string>(() =>
@@ -172,9 +195,9 @@ export const App: React.FC = () => {
     if (!autenticado) return;
     cargarLogs();
 
-    // 1. Suscripción a presencia en tiempo real (dispositivos del restaurante conectados)
-    const desuscribirPresencia = servicioSupabaseLogs.suscribirPresencia((dispositivos) => {
-      setDispositivosEnLinea(dispositivos);
+    // 1. Suscripción a presencia en tiempo real con metadatos de IP (dispositivos del restaurante conectados)
+    const desuscribirPresencia = servicioSupabaseLogs.suscribirPresencia((presencias) => {
+      setPresenciasEnLinea(presencias);
     });
 
     // 2. Suscripción a Realtime de logs y crashes
@@ -220,9 +243,6 @@ export const App: React.FC = () => {
       }
     }, 8000);
 
-    // 4. Comprobación automática de OTA al iniciar
-    servicioActualizacionesTerminal.verificarYActualizarSilencioso();
-
     return () => {
       desuscribirPresencia();
       desuscribirLogs();
@@ -250,23 +270,112 @@ export const App: React.FC = () => {
     setPinInput('');
   };
 
-  // Dispositivos únicos detectados (combina presencia en vivo con historial de logs)
-  const dispositivosDisponibles = useMemo(() => {
-    const setDisp = new Set<string>();
-    // Agregar primero los que están conectados en vivo
-    for (const d of dispositivosEnLinea) {
-      if (d) setDisp.add(d);
-    }
-    // Agregar los que han reportado logs
-    for (const log of logs) {
-      if (log.dispositivo_id) {
-        setDisp.add(log.dispositivo_id);
+  // Dispositivos unificados con deduplicación estricta por IP / Dirección
+  const dispositivosUnificados: InfoDispositivoUnificado[] = useMemo(() => {
+    const mapa = new Map<string, InfoDispositivoUnificado>();
+
+    // 1. Procesar presencias en tiempo real
+    for (const p of presenciasEnLinea) {
+      const tieneIp = Boolean(p.ip && p.ip !== 'desconocido' && p.ip !== '127.0.0.1' && p.ip !== '::1');
+      const clave = tieneIp ? `ip:${p.ip}` : `id:${p.dispositivoId}`;
+      const dispId = p.dispositivoId;
+
+      const existente = mapa.get(clave);
+      if (existente) {
+        existente.sesionesActivas++;
+        existente.enLinea = true;
+        if (dispId && !existente.idsDispositivo.includes(dispId)) {
+          existente.idsDispositivo.push(dispId);
+        }
+        if (p.plataforma && existente.plataforma === 'Web / Navegador') {
+          existente.plataforma = deducirPlataforma(p.userAgent) || p.plataforma;
+        }
+        if (p.userAgent && !existente.userAgent) {
+          existente.userAgent = p.userAgent;
+        }
+      } else {
+        mapa.set(clave, {
+          clave,
+          direccionIp: tieneIp ? (p.ip as string) : null,
+          idsDispositivo: dispId ? [dispId] : [],
+          nombrePrincipal: tieneIp ? p.ip! : dispId,
+          plataforma: p.plataforma || deducirPlataforma(p.userAgent),
+          userAgent: p.userAgent,
+          enLinea: true,
+          sesionesActivas: 1,
+          ultimaActividad: p.conectadoEn || new Date().toISOString(),
+          totalLogs: 0,
+          totalCrashes: 0,
+          totalErrores: 0,
+        });
       }
     }
-    return Array.from(setDisp);
-  }, [dispositivosEnLinea, logs]);
 
-  // Filtrado reactivo de logs
+    // 2. Procesar historial de logs de Supabase
+    for (const l of logs) {
+      const ipLog = l.detalles?.ip;
+      const tieneIp = Boolean(ipLog && ipLog !== 'desconocido' && ipLog !== '127.0.0.1' && ipLog !== '::1');
+      const clave = tieneIp ? `ip:${ipLog}` : `id:${l.dispositivo_id}`;
+      const dispId = l.dispositivo_id;
+
+      let item = mapa.get(clave);
+      if (!item && !tieneIp) {
+        // Buscar si este ID de dispositivo ya pertenece a un grupo por IP
+        for (const cand of mapa.values()) {
+          if (cand.idsDispositivo.includes(dispId)) {
+            item = cand;
+            break;
+          }
+        }
+      }
+
+      if (!item) {
+        const platDeducida =
+          (l.detalles?.plataforma as string) || deducirPlataforma(l.detalles?.userAgent as string);
+        item = {
+          clave,
+          direccionIp: tieneIp ? (ipLog as string) : null,
+          idsDispositivo: dispId ? [dispId] : [],
+          nombrePrincipal: tieneIp ? (ipLog as string) : dispId,
+          plataforma: platDeducida,
+          userAgent: l.detalles?.userAgent as string | undefined,
+          enLinea: false,
+          sesionesActivas: 0,
+          ultimaActividad: l.creado_en,
+          totalLogs: 0,
+          totalCrashes: 0,
+          totalErrores: 0,
+        };
+        mapa.set(clave, item);
+      }
+
+      item.totalLogs++;
+      if (l.nivel === 'CRASH') item.totalCrashes++;
+      if (l.nivel === 'ERROR') item.totalErrores++;
+
+      if (dispId && !item.idsDispositivo.includes(dispId)) {
+        item.idsDispositivo.push(dispId);
+      }
+
+      if (new Date(l.creado_en).getTime() > new Date(item.ultimaActividad).getTime()) {
+        item.ultimaActividad = l.creado_en;
+      }
+    }
+
+    // Ordenar: primero los dispositivos que están en línea, luego por actividad más reciente
+    return Array.from(mapa.values()).sort((a, b) => {
+      if (a.enLinea && !b.enLinea) return -1;
+      if (!a.enLinea && b.enLinea) return 1;
+      return new Date(b.ultimaActividad).getTime() - new Date(a.ultimaActividad).getTime();
+    });
+  }, [presenciasEnLinea, logs]);
+
+  // Terminales / Dispositivos únicos en línea (deduplicados por IP)
+  const dispositivosEnLineaUnicos = useMemo(() => {
+    return dispositivosUnificados.filter((d) => d.enLinea);
+  }, [dispositivosUnificados]);
+
+  // Filtrado reactivo de logs con soporte para filtro por IP o ID
   const logsFiltrados = useMemo(() => {
     const ahoraMs = Date.now();
     return logs.filter((log) => {
@@ -275,9 +384,20 @@ export const App: React.FC = () => {
         return false;
       }
 
-      // Filtro por dispositivo
-      if (filtro.dispositivoId !== 'TODOS' && log.dispositivo_id !== filtro.dispositivoId) {
-        return false;
+      // Filtro por dispositivo / IP
+      if (filtro.dispositivoId !== 'TODOS') {
+        if (filtro.dispositivoId.startsWith('ip:')) {
+          const ipBuscada = filtro.dispositivoId.replace('ip:', '');
+          const coincideIp = log.detalles?.ip === ipBuscada;
+          const dispObj = dispositivosUnificados.find((d) => d.clave === filtro.dispositivoId);
+          const coincideIdAsociado = dispObj ? dispObj.idsDispositivo.includes(log.dispositivo_id) : false;
+          if (!coincideIp && !coincideIdAsociado) return false;
+        } else if (filtro.dispositivoId.startsWith('id:')) {
+          const idBuscado = filtro.dispositivoId.replace('id:', '');
+          if (log.dispositivo_id !== idBuscado) return false;
+        } else {
+          if (log.dispositivo_id !== filtro.dispositivoId) return false;
+        }
       }
 
       // Filtro por rango de fecha
@@ -294,34 +414,33 @@ export const App: React.FC = () => {
         const q = filtro.texto.toLowerCase();
         const coincideMensaje = log.mensaje.toLowerCase().includes(q);
         const coincideDisp = log.dispositivo_id.toLowerCase().includes(q);
+        const coincideIp = log.detalles?.ip ? String(log.detalles.ip).toLowerCase().includes(q) : false;
         const coincideOrigen = log.origen.toLowerCase().includes(q);
         const coincideStack = log.detalles?.stack
           ? String(log.detalles.stack).toLowerCase().includes(q)
           : false;
 
-        if (!coincideMensaje && !coincideDisp && !coincideOrigen && !coincideStack) {
+        if (!coincideMensaje && !coincideDisp && !coincideIp && !coincideOrigen && !coincideStack) {
           return false;
         }
       }
 
       return true;
     });
-  }, [logs, filtro]);
+  }, [logs, filtro, dispositivosUnificados]);
 
-  // Estadísticas computadas
+  // Estadísticas computadas con total de dispositivos únicos deduplicados
   const estadisticas: EstadisticasLogs = useMemo(() => {
     let crashes = 0;
     let errores = 0;
     let advertencias = 0;
     let informativos = 0;
-    const dispositivos = new Set<string>();
 
     for (const l of logs) {
       if (l.nivel === 'CRASH') crashes++;
       else if (l.nivel === 'ERROR') errores++;
       else if (l.nivel === 'WARN') advertencias++;
       else if (l.nivel === 'INFO') informativos++;
-      if (l.dispositivo_id) dispositivos.add(l.dispositivo_id);
     }
 
     return {
@@ -330,9 +449,9 @@ export const App: React.FC = () => {
       errores,
       advertencias,
       informativos,
-      dispositivosUnicos: Math.max(dispositivos.size, dispositivosDisponibles.length),
+      dispositivosUnicos: dispositivosUnificados.length,
     };
-  }, [logs, dispositivosDisponibles]);
+  }, [logs, dispositivosUnificados]);
 
   // Exportar a JSON
   const handleExportarJson = (): void => {
@@ -762,61 +881,96 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Dispositivos Activos */}
-          <div className="p-4 rounded-2xl bg-stone-900/80 border border-stone-800 flex items-center justify-between col-span-2 lg:col-span-1">
+          {/* Dispositivos Activos con Acceso al Panel de Dispositivos Completados */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setModalDispositivosAbierto(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setModalDispositivosAbierto(true);
+              }
+            }}
+            className="p-4 rounded-2xl bg-stone-900/80 border border-stone-800 hover:border-emerald-500/50 flex items-center justify-between col-span-2 lg:col-span-1 cursor-pointer transition-all group shadow-md"
+          >
             <div>
-              <p className="text-xs text-stone-400 font-medium">Dispositivos</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs text-stone-400 font-medium">Dispositivos Únicos (IP)</p>
+                <span className="text-[10px] text-emerald-400 group-hover:underline flex items-center gap-0.5 font-bold">
+                  Ver lista <Eye className="w-3 h-3 inline" />
+                </span>
+              </div>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-2xl font-black text-emerald-400">
-                  {dispositivosEnLinea.length > 0 ? dispositivosEnLinea.length : estadisticas.dispositivosUnicos}
+                  {dispositivosEnLineaUnicos.length > 0
+                    ? dispositivosEnLineaUnicos.length
+                    : estadisticas.dispositivosUnicos}
                 </p>
-                {dispositivosEnLinea.length > 0 && (
+                {dispositivosEnLineaUnicos.length > 0 && (
                   <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-1.5 py-0.5 rounded-full font-bold">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                    En vivo
+                    En vivo ({dispositivosEnLineaUnicos.length})
                   </span>
                 )}
               </div>
               <p className="text-[10px] text-stone-500 mt-0.5">
-                {estadisticas.dispositivosUnicos} registrados en total
+                {estadisticas.dispositivosUnicos} registrados en total · Deduplicados por IP
               </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500/20 group-hover:scale-105 transition-all">
               <Tablet className="w-5 h-5" />
             </div>
           </div>
         </section>
 
-        {/* Barra de Dispositivos Conectados en Tiempo Real */}
-        {dispositivosEnLinea.length > 0 && (
+        {/* Barra de Dispositivos Conectados en Tiempo Real (Deduplicados por IP) */}
+        {dispositivosEnLineaUnicos.length > 0 && (
           <div className="p-3 rounded-2xl bg-stone-900/90 border border-emerald-900/40 flex flex-wrap items-center gap-2 text-xs shadow-lg">
             <span className="text-emerald-400 font-bold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Terminales en línea ({dispositivosEnLinea.length}):
+              Terminales en línea ({dispositivosEnLineaUnicos.length}):
             </span>
-            {dispositivosEnLinea.map((id) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setFiltro({ ...filtro, dispositivoId: id })}
-                className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono cursor-pointer transition-all ${
-                  filtro.dispositivoId === id
-                    ? 'bg-emerald-500 text-stone-950 border-emerald-400 font-bold'
-                    : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-emerald-700'
-                }`}
-              >
-                {id}
-              </button>
-            ))}
+            {dispositivosEnLineaUnicos.map((disp) => {
+              const esActivo = filtro.dispositivoId === disp.clave;
+              return (
+                <button
+                  key={disp.clave}
+                  type="button"
+                  onClick={() => setFiltro({ ...filtro, dispositivoId: esActivo ? 'TODOS' : disp.clave })}
+                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono cursor-pointer transition-all flex items-center gap-1.5 ${
+                    esActivo
+                      ? 'bg-emerald-500 text-stone-950 border-emerald-400 font-bold shadow-md'
+                      : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-emerald-700'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>{disp.direccionIp ? `IP: ${disp.direccionIp}` : disp.nombrePrincipal}</span>
+                  {disp.sesionesActivas > 1 && (
+                    <span className="text-[9px] px-1 py-0.2 bg-amber-400/20 text-amber-300 border border-amber-400/30 rounded font-sans">
+                      {disp.sesionesActivas} ses.
+                    </span>
+                  )}
+                </button>
+              );
+            })}
             {filtro.dispositivoId !== 'TODOS' && (
               <button
                 type="button"
                 onClick={() => setFiltro({ ...filtro, dispositivoId: 'TODOS' })}
-                className="text-[11px] text-amber-400 underline hover:text-amber-300 cursor-pointer ml-auto"
+                className="text-[11px] text-amber-400 underline hover:text-amber-300 cursor-pointer"
               >
                 Ver todos
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setModalDispositivosAbierto(true)}
+              className="px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/80 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-all ml-auto"
+            >
+              <Eye className="w-3 h-3" />
+              <span>Ver dispositivos completados ({dispositivosUnificados.length})</span>
+            </button>
           </div>
         )}
 
@@ -851,14 +1005,16 @@ export const App: React.FC = () => {
                 <select
                   value={filtro.dispositivoId}
                   onChange={(e) => setFiltro({ ...filtro, dispositivoId: e.target.value })}
-                  className="bg-transparent text-xs text-stone-300 outline-none cursor-pointer"
+                  className="bg-transparent text-xs text-stone-300 outline-none cursor-pointer max-w-[210px] truncate"
                 >
                   <option value="TODOS" className="bg-stone-900">
-                    Todos los dispositivos
+                    Todos los dispositivos ({dispositivosUnificados.length})
                   </option>
-                  {dispositivosDisponibles.map((disp) => (
-                    <option key={disp} value={disp} className="bg-stone-900">
-                      {disp}
+                  {dispositivosUnificados.map((disp) => (
+                    <option key={disp.clave} value={disp.clave} className="bg-stone-900">
+                      {disp.enLinea ? '🟢 ' : '⚪ '}
+                      {disp.direccionIp ? `IP: ${disp.direccionIp}` : disp.nombrePrincipal}
+                      {disp.sesionesActivas > 1 ? ` (${disp.sesionesActivas} ses.)` : ''} - [{disp.plataforma}]
                     </option>
                   ))}
                 </select>
@@ -1291,6 +1447,184 @@ export const App: React.FC = () => {
                   Cerrar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Dispositivos Completados con Deduplicación por IP */}
+      {modalDispositivosAbierto && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Cabecera del Modal */}
+            <div className="p-4 sm:p-5 border-b border-stone-800 flex items-center justify-between bg-stone-950/90">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <Tablet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base text-white flex items-center gap-2">
+                    <span>Dispositivos Completados y Conexiones</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-mono">
+                      {dispositivosUnificados.length} únicos por IP
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-stone-400">
+                    Terminales auditadas en vivo e historial de actividad en La Estación Grill
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setModalDispositivosAbierto(false)}
+                className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 transition-all cursor-pointer"
+                aria-label="Cerrar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Banner de Deduplicación por IP */}
+            <div className="px-4 sm:px-5 py-2.5 bg-emerald-950/30 border-b border-emerald-900/40 text-xs text-emerald-300 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>Deduplicación por IP activa:</strong> Si varias pestañas o sesiones comparten la misma dirección IP, se contabilizan como 1 solo dispositivo único.
+              </span>
+            </div>
+
+            {/* Cuerpo del Modal: Lista de Dispositivos */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 custom-scrollbar flex-1">
+              {dispositivosUnificados.length === 0 ? (
+                <div className="p-8 text-center text-stone-500 space-y-2">
+                  <Tablet className="w-8 h-8 mx-auto text-stone-600" />
+                  <p className="text-xs">No se han registrado dispositivos ni eventos aún.</p>
+                </div>
+              ) : (
+                dispositivosUnificados.map((disp, idx) => {
+                  const esMovil = /android|iphone|ipad|ipod/i.test(disp.plataforma || '');
+                  return (
+                    <div
+                      key={disp.clave || idx}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        disp.enLinea
+                          ? 'bg-stone-950/90 border-emerald-900/60 shadow-md'
+                          : 'bg-stone-950/50 border-stone-800/80'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        {/* Identidad del Dispositivo */}
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              disp.enLinea
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-stone-800/60 text-stone-400 border border-stone-800'
+                            }`}
+                          >
+                            {esMovil ? <Smartphone className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
+                          </div>
+
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Estado En Vivo */}
+                              {disp.enLinea ? (
+                                <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/90 border border-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                                  EN LÍNEA AHORA
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-stone-400 bg-stone-900 border border-stone-800 px-2 py-0.5 rounded-full font-medium">
+                                  Desconectado
+                                </span>
+                              )}
+
+                              {/* Dirección IP Principal */}
+                              <span className="font-mono text-xs sm:text-sm font-bold text-white flex items-center gap-1">
+                                <Globe className="w-3.5 h-3.5 text-stone-400 inline" />
+                                {disp.direccionIp ? disp.direccionIp : 'Sin IP registrada'}
+                              </span>
+
+                              {/* Alerta de Misma IP / Múltiples Sesiones */}
+                              {disp.sesionesActivas > 1 && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/90 border border-amber-600/70 text-amber-300 font-bold flex items-center gap-1">
+                                  <Layers className="w-3 h-3 text-amber-400" />
+                                  Misma IP: {disp.sesionesActivas} sesiones activas simultáneas
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Metadatos de Plataforma y Hardware */}
+                            <div className="mt-1.5 text-xs text-stone-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <span>
+                                <strong className="text-stone-300">Plataforma:</strong> {disp.plataforma}
+                              </span>
+                              <span>·</span>
+                              <span>
+                                <strong className="text-stone-300">Última actividad:</strong>{' '}
+                                {formatearFecha(disp.ultimaActividad)}
+                              </span>
+                            </div>
+
+                            {/* IDs de Sesión Asociados */}
+                            {disp.idsDispositivo.length > 0 && (
+                              <div className="mt-1 text-[11px] font-mono text-stone-500 truncate max-w-xl">
+                                <span className="text-stone-400 font-sans">ID(s) de sesión: </span>
+                                {disp.idsDispositivo.join(' · ')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Botón de Acción y Métricas Rápidas */}
+                        <div className="flex sm:flex-col items-end justify-between sm:justify-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-stone-900">
+                          {/* Conteo de logs */}
+                          <div className="flex items-center gap-2 text-[11px] text-stone-400">
+                            <span className="text-stone-300 font-bold">{disp.totalLogs}</span> logs
+                            {disp.totalCrashes > 0 && (
+                              <span className="text-rose-400 font-bold flex items-center gap-0.5">
+                                <Bug className="w-3 h-3 inline" /> {disp.totalCrashes}
+                              </span>
+                            )}
+                            {disp.totalErrores > 0 && (
+                              <span className="text-amber-400 font-bold flex items-center gap-0.5">
+                                <AlertTriangle className="w-3 h-3 inline" /> {disp.totalErrores}
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFiltro({ ...filtro, dispositivoId: disp.clave });
+                              setModalDispositivosAbierto(false);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-emerald-950/80 text-emerald-400 hover:text-emerald-300 border border-stone-800 hover:border-emerald-700/80 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all"
+                          >
+                            <Search className="w-3.5 h-3.5" />
+                            <span>Filtrar eventos</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Pie del Modal */}
+            <div className="p-4 border-t border-stone-800 bg-stone-950/90 flex items-center justify-between">
+              <p className="text-xs text-stone-400">
+                Total de terminales físicas / redes únicas:{' '}
+                <strong className="text-white">{dispositivosUnificados.length}</strong> ({dispositivosEnLineaUnicos.length} activas)
+              </p>
+              <button
+                type="button"
+                onClick={() => setModalDispositivosAbierto(false)}
+                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold cursor-pointer transition-all"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
