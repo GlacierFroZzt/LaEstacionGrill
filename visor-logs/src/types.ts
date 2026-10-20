@@ -2,6 +2,7 @@ export type NivelLog = 'CRASH' | 'ERROR' | 'WARN' | 'INFO';
 
 export interface DetallesLog {
   ip?: string;
+  nombreDispositivo?: string;
   stack?: string;
   componentStack?: string;
   origenError?: string;
@@ -45,6 +46,7 @@ export interface FiltroLogs {
 export interface DetallePresencia {
   key: string;
   dispositivoId: string;
+  nombreDispositivo?: string;
   ip?: string;
   plataforma?: string;
   userAgent?: string;
@@ -57,6 +59,8 @@ export interface InfoDispositivoUnificado {
   direccionIp: string | null;
   idsDispositivo: string[];
   nombrePrincipal: string;
+  nombreReportado?: string;
+  aliasPersonalizado?: string;
   plataforma: string;
   userAgent?: string;
   enLinea: boolean;

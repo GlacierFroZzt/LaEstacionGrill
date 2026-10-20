@@ -1,5 +1,6 @@
-import type { Mesa, Cuenta, CorteCaja, TurnoCerrado, TipoArea, TemaVisual, PedidoCocina } from '../types';
+import type { Mesa, Cuenta, CorteCaja, TurnoCerrado, TipoArea, TemaVisual, PedidoCocina, Producto } from '../types';
 import { MESAS_INICIALES } from '../data/mesasIniciales';
+import { PRODUCTOS_INICIALES } from '../data/menuInicial';
 import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
 
 const CLAVES_STORAGE = {
@@ -11,6 +12,8 @@ const CLAVES_STORAGE = {
   HISTORIAL_TURNOS: 'taqueria_km243_historial_turnos_v1',
   PIN_ADMIN: 'taqueria_km243_pin_admin_v1',
   TEMA: 'taqueria_km243_tema_v1',
+  NOMBRE_DISPOSITIVO: 'taqueria_km243_nombre_dispositivo_v1',
+  PRODUCTOS: 'taqueria_km243_productos_v1',
 } as const;
 
 const PIN_POR_DEFECTO = '2430';
@@ -370,5 +373,89 @@ export class RepositorioStorage {
     } catch (error: unknown) {
       console.error('[RepositorioStorage.guardarPinAdmin] Error al guardar nuevo PIN:', error);
     }
+  }
+
+  /**
+   * Obtiene el nombre legible de esta terminal o dispositivo (ej. "iPhone de Juan", "Tablet Barra").
+   * Si no se ha configurado, deduce un nombre sugerido según la plataforma y hardware.
+   */
+  public static obtenerNombreDispositivo(): string {
+    try {
+      const guardado = localStorage.getItem(CLAVES_STORAGE.NOMBRE_DISPOSITIVO);
+      if (guardado && guardado.trim()) {
+        return guardado.trim();
+      }
+
+      if (typeof navigator !== 'undefined') {
+        const ua = navigator.userAgent || '';
+        if (/iphone/i.test(ua)) return 'iPhone';
+        if (/ipad/i.test(ua)) return 'iPad';
+        if (/android/i.test(ua)) return 'Terminal Android';
+        if (/windows/i.test(ua)) return 'PC Windows';
+        if (/macintosh|mac os x/i.test(ua)) return 'Mac';
+      }
+
+      return 'Terminal POS';
+    } catch {
+      return 'Terminal POS';
+    }
+  }
+
+  /**
+   * Guarda el nombre personalizado de este dispositivo para identificación en la red y auditoría.
+   */
+  public static guardarNombreDispositivo(nombre: string): void {
+    try {
+      const limpio = nombre.trim();
+      if (limpio) {
+        localStorage.setItem(CLAVES_STORAGE.NOMBRE_DISPOSITIVO, limpio);
+      }
+    } catch (error: unknown) {
+      console.error('[RepositorioStorage.guardarNombreDispositivo] Error al guardar nombre:', error);
+    }
+  }
+
+  /**
+   * Obtiene el catálogo de productos guardado en almacenamiento local.
+   * Si no existe o es corrupto, se inicializa con los productos iniciales de la taquería.
+   */
+  public static obtenerProductos(): Producto[] {
+    try {
+      const serializado = localStorage.getItem(CLAVES_STORAGE.PRODUCTOS);
+      if (serializado) {
+        const datos = JSON.parse(serializado) as unknown;
+        if (Array.isArray(datos) && datos.length > 0) {
+          return datos as Producto[];
+        }
+      }
+
+      // Si no existe, guardar catálogo inicial
+      const iniciales = [...PRODUCTOS_INICIALES];
+      RepositorioStorage.guardarProductos(iniciales);
+      return iniciales;
+    } catch (error: unknown) {
+      console.error('[RepositorioStorage.obtenerProductos] Error al cargar productos:', error);
+      return [...PRODUCTOS_INICIALES];
+    }
+  }
+
+  /**
+   * Guarda de manera persistente el catálogo completo de productos.
+   */
+  public static guardarProductos(productos: Producto[]): void {
+    try {
+      localStorage.setItem(CLAVES_STORAGE.PRODUCTOS, JSON.stringify(productos));
+    } catch (error: unknown) {
+      console.error('[RepositorioStorage.guardarProductos] Error al guardar productos:', error);
+    }
+  }
+
+  /**
+   * Restablece el menú al catálogo inicial de fábrica.
+   */
+  public static restablecerProductosPredeterminados(): Producto[] {
+    const iniciales = [...PRODUCTOS_INICIALES];
+    RepositorioStorage.guardarProductos(iniciales);
+    return iniciales;
   }
 }

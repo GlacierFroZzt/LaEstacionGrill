@@ -26,6 +26,7 @@ import {
   Monitor,
   Layers,
   Eye,
+  Pencil,
 } from 'lucide-react';
 import { servicioSupabaseLogs } from './servicioSupabaseLogs';
 import { servicioActualizacionesTerminal } from './servicioActualizacionesTerminal';
@@ -41,11 +42,64 @@ import type {
 function deducirPlataforma(ua?: string): string {
   if (!ua) return 'Web / Navegador';
   if (/android/i.test(ua)) return 'Android';
-  if (/iphone|ipad|ipod/i.test(ua)) return 'iOS (Apple)';
+  if (/iphone/i.test(ua)) return 'iPhone (iOS)';
+  if (/ipad/i.test(ua)) return 'iPad (iOS)';
+  if (/ipod/i.test(ua)) return 'iPod (iOS)';
   if (/windows/i.test(ua)) return 'Windows PC';
   if (/macintosh|mac os x/i.test(ua)) return 'macOS';
   if (/linux/i.test(ua)) return 'Linux';
   return 'Navegador Web';
+}
+
+const CLAVE_ALIAS_STORAGE = 'taqueria_terminal_alias_dispositivos_v1';
+
+function resolverNombreAmigable(params: {
+  clave: string;
+  direccionIp?: string | null;
+  idsDispositivo?: string[];
+  nombreReportado?: string;
+  userAgent?: string;
+  plataforma?: string;
+  aliasMap: Record<string, string>;
+}): string {
+  const { clave, direccionIp, idsDispositivo = [], nombreReportado, userAgent = '', plataforma = '', aliasMap } = params;
+
+  // 1. Alias personalizado explícito guardado por el administrador en la terminal
+  if (aliasMap[clave]) return aliasMap[clave];
+  if (direccionIp && aliasMap[`ip:${direccionIp}`]) return aliasMap[`ip:${direccionIp}`];
+  for (const id of idsDispositivo) {
+    if (aliasMap[`id:${id}`]) return aliasMap[`id:${id}`];
+    if (aliasMap[id]) return aliasMap[id];
+  }
+
+  // 2. Nombre explícito reportado por el dispositivo (ej. "iPhone de Juan", "Tablet Caja")
+  if (nombreReportado && nombreReportado.trim() && nombreReportado !== 'Terminal POS') {
+    return nombreReportado.trim();
+  }
+
+  // 3. Deducción por plataforma/hardware
+  const ua = userAgent.toLowerCase();
+  const plat = plataforma.toLowerCase();
+
+  const esIphone = ua.includes('iphone') || plat.includes('iphone');
+  const esIpad = ua.includes('ipad') || plat.includes('ipad');
+  const esAndroid = ua.includes('android') || plat.includes('android');
+
+  if (esIphone) return 'iPhone';
+  if (esIpad) return 'iPad';
+  if (esAndroid) return 'Terminal Android';
+  if (ua.includes('windows') || plat.includes('windows') || plat.includes('win32')) return 'PC Windows';
+  if (ua.includes('mac') || plat.includes('mac')) return 'Mac';
+
+  // 4. Si el nombre reportado era "Terminal POS", usarlo antes de la IP cruda
+  if (nombreReportado && nombreReportado.trim()) {
+    return nombreReportado.trim();
+  }
+
+  // 5. Fallback con IP o ID
+  if (direccionIp) return `Dispositivo (${direccionIp})`;
+  if (idsDispositivo.length > 0) return idsDispositivo[0];
+  return 'Terminal';
 }
 
 const SQL_ESQUEMA_LOGS = `-- TAQUERÍA KM 243 / LA ESTACIÓN GRILL
@@ -111,6 +165,37 @@ export const App: React.FC = () => {
   const [ultimaSincronizacion, setUltimaSincronizacion] = useState<string>(() =>
     new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   );
+
+  // Alias personalizados de Dispositivos (definidos por el administrador en la terminal)
+  const [aliasDispositivos, setAliasDispositivos] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem(CLAVE_ALIAS_STORAGE);
+      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [dispositivoParaEditar, setDispositivoParaEditar] = useState<InfoDispositivoUnificado | null>(null);
+  const [aliasInput, setAliasInput] = useState<string>('');
+
+  const guardarAlias = (clave: string, nuevoAlias: string): void => {
+    const limpio = nuevoAlias.trim();
+    setAliasDispositivos((prev) => {
+      const actualizados = { ...prev };
+      if (limpio) {
+        actualizados[clave] = limpio;
+      } else {
+        delete actualizados[clave];
+      }
+      try {
+        localStorage.setItem(CLAVE_ALIAS_STORAGE, JSON.stringify(actualizados));
+      } catch (e: unknown) {
+        console.error('[App] Error al guardar alias:', e);
+      }
+      return actualizados;
+    });
+    setDispositivoParaEditar(null);
+  };
 
   // Filtros
   const [filtro, setFiltro] = useState<FiltroLogs>({
@@ -287,6 +372,9 @@ export const App: React.FC = () => {
         if (dispId && !existente.idsDispositivo.includes(dispId)) {
           existente.idsDispositivo.push(dispId);
         }
+        if (p.nombreDispositivo && !existente.nombreReportado) {
+          existente.nombreReportado = p.nombreDispositivo;
+        }
         if (p.plataforma && existente.plataforma === 'Web / Navegador') {
           existente.plataforma = deducirPlataforma(p.userAgent) || p.plataforma;
         }
@@ -294,12 +382,14 @@ export const App: React.FC = () => {
           existente.userAgent = p.userAgent;
         }
       } else {
+        const plat = p.plataforma || deducirPlataforma(p.userAgent);
         mapa.set(clave, {
           clave,
           direccionIp: tieneIp ? (p.ip as string) : null,
           idsDispositivo: dispId ? [dispId] : [],
-          nombrePrincipal: tieneIp ? p.ip! : dispId,
-          plataforma: p.plataforma || deducirPlataforma(p.userAgent),
+          nombrePrincipal: '',
+          nombreReportado: p.nombreDispositivo,
+          plataforma: plat,
           userAgent: p.userAgent,
           enLinea: true,
           sesionesActivas: 1,
@@ -336,7 +426,8 @@ export const App: React.FC = () => {
           clave,
           direccionIp: tieneIp ? (ipLog as string) : null,
           idsDispositivo: dispId ? [dispId] : [],
-          nombrePrincipal: tieneIp ? (ipLog as string) : dispId,
+          nombrePrincipal: '',
+          nombreReportado: l.detalles?.nombreDispositivo as string | undefined,
           plataforma: platDeducida,
           userAgent: l.detalles?.userAgent as string | undefined,
           enLinea: false,
@@ -347,6 +438,10 @@ export const App: React.FC = () => {
           totalErrores: 0,
         };
         mapa.set(clave, item);
+      } else {
+        if (!item.nombreReportado && l.detalles?.nombreDispositivo) {
+          item.nombreReportado = l.detalles.nombreDispositivo as string;
+        }
       }
 
       item.totalLogs++;
@@ -362,18 +457,68 @@ export const App: React.FC = () => {
       }
     }
 
+    // 3. Resolver nombres legibles y alias para todos los dispositivos
+    for (const item of mapa.values()) {
+      item.aliasPersonalizado =
+        aliasDispositivos[item.clave] ||
+        (item.direccionIp ? aliasDispositivos[`ip:${item.direccionIp}`] : undefined);
+      item.nombrePrincipal = resolverNombreAmigable({
+        clave: item.clave,
+        direccionIp: item.direccionIp,
+        idsDispositivo: item.idsDispositivo,
+        nombreReportado: item.nombreReportado,
+        userAgent: item.userAgent,
+        plataforma: item.plataforma,
+        aliasMap: aliasDispositivos,
+      });
+    }
+
     // Ordenar: primero los dispositivos que están en línea, luego por actividad más reciente
     return Array.from(mapa.values()).sort((a, b) => {
       if (a.enLinea && !b.enLinea) return -1;
       if (!a.enLinea && b.enLinea) return 1;
       return new Date(b.ultimaActividad).getTime() - new Date(a.ultimaActividad).getTime();
     });
-  }, [presenciasEnLinea, logs]);
+  }, [presenciasEnLinea, logs, aliasDispositivos]);
 
   // Terminales / Dispositivos únicos en línea (deduplicados por IP)
   const dispositivosEnLineaUnicos = useMemo(() => {
     return dispositivosUnificados.filter((d) => d.enLinea);
   }, [dispositivosUnificados]);
+
+  const obtenerNombreDispositivoParaLog = useCallback(
+    (log: RegistroLog): string => {
+      const aliasPorId = aliasDispositivos[`id:${log.dispositivo_id}`] || aliasDispositivos[log.dispositivo_id];
+      if (aliasPorId) return aliasPorId;
+
+      const ip = log.detalles?.ip;
+      if (ip && ip !== 'desconocido') {
+        const aliasPorIp = aliasDispositivos[`ip:${ip}`];
+        if (aliasPorIp) return aliasPorIp;
+      }
+
+      if (log.detalles?.nombreDispositivo && log.detalles.nombreDispositivo !== 'Terminal POS') {
+        return log.detalles.nombreDispositivo as string;
+      }
+
+      const encontrado = dispositivosUnificados.find(
+        (d) =>
+          d.idsDispositivo.includes(log.dispositivo_id) ||
+          (ip && ip !== 'desconocido' && d.direccionIp === ip)
+      );
+      if (encontrado && encontrado.nombrePrincipal) {
+        return encontrado.nombrePrincipal;
+      }
+
+      const ua = (log.detalles?.userAgent as string) || '';
+      if (/iphone/i.test(ua)) return 'iPhone';
+      if (/ipad/i.test(ua)) return 'iPad';
+      if (/android/i.test(ua)) return 'Terminal Android';
+
+      return log.dispositivo_id;
+    },
+    [aliasDispositivos, dispositivosUnificados]
+  );
 
   // Filtrado reactivo de logs con soporte para filtro por IP o ID
   const logsFiltrados = useMemo(() => {
@@ -933,19 +1078,25 @@ export const App: React.FC = () => {
             </span>
             {dispositivosEnLineaUnicos.map((disp) => {
               const esActivo = filtro.dispositivoId === disp.clave;
+              const esMovil = /android|iphone|ipad|ipod/i.test(disp.plataforma || '');
               return (
                 <button
                   key={disp.clave}
                   type="button"
                   onClick={() => setFiltro({ ...filtro, dispositivoId: esActivo ? 'TODOS' : disp.clave })}
-                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono cursor-pointer transition-all flex items-center gap-1.5 ${
+                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium cursor-pointer transition-all flex items-center gap-1.5 ${
                     esActivo
                       ? 'bg-emerald-500 text-stone-950 border-emerald-400 font-bold shadow-md'
                       : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-emerald-700'
                   }`}
+                  title={`${disp.nombrePrincipal} (${disp.direccionIp || 'Sin IP'}) - ${disp.plataforma}`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>{disp.direccionIp ? `IP: ${disp.direccionIp}` : disp.nombrePrincipal}</span>
+                  {esMovil ? <Smartphone className="w-3 h-3 text-amber-400 shrink-0" /> : <Monitor className="w-3 h-3 text-amber-400 shrink-0" />}
+                  <span className="font-bold">{disp.nombrePrincipal}</span>
+                  {disp.direccionIp && (
+                    <span className="text-[10px] font-mono text-stone-400">({disp.direccionIp})</span>
+                  )}
                   {disp.sesionesActivas > 1 && (
                     <span className="text-[9px] px-1 py-0.2 bg-amber-400/20 text-amber-300 border border-amber-400/30 rounded font-sans">
                       {disp.sesionesActivas} ses.
@@ -1013,7 +1164,7 @@ export const App: React.FC = () => {
                   {dispositivosUnificados.map((disp) => (
                     <option key={disp.clave} value={disp.clave} className="bg-stone-900">
                       {disp.enLinea ? '🟢 ' : '⚪ '}
-                      {disp.direccionIp ? `IP: ${disp.direccionIp}` : disp.nombrePrincipal}
+                      {disp.nombrePrincipal} {disp.direccionIp ? `(IP: ${disp.direccionIp})` : ''}
                       {disp.sesionesActivas > 1 ? ` (${disp.sesionesActivas} ses.)` : ''} - [{disp.plataforma}]
                     </option>
                   ))}
@@ -1206,13 +1357,23 @@ export const App: React.FC = () => {
                       >
                         {item.mensaje}
                       </p>
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1 text-[11px] text-stone-500 font-mono">
-                        <span className="flex items-center gap-1 text-stone-400">
-                          <Tablet className="w-3 h-3" />
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 mt-1 text-[11px] text-stone-400">
+                        <span className="flex items-center gap-1 font-bold text-amber-300 bg-stone-950/80 border border-amber-900/40 px-2 py-0.5 rounded-md">
+                          <Smartphone className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span>{obtenerNombreDispositivoParaLog(item)}</span>
+                        </span>
+                        {item.detalles?.ip && item.detalles.ip !== 'desconocido' && (
+                          <span className="flex items-center gap-1 font-mono text-[10px] text-stone-400">
+                            <Globe className="w-2.5 h-2.5 text-stone-500" />
+                            {String(item.detalles.ip)}
+                          </span>
+                        )}
+                        <span>•</span>
+                        <span className="font-mono text-[10px] text-stone-500">
                           {item.dispositivo_id}
                         </span>
                         <span>•</span>
-                        <span>{item.origen}</span>
+                        <span className="text-stone-400">{item.origen}</span>
                         {item.detalles?.stack && (
                           <>
                             <span>•</span>
@@ -1292,9 +1453,13 @@ export const App: React.FC = () => {
               {/* Ficha de Información de Origen */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
                 <div className="p-3 rounded-xl bg-stone-950 border border-stone-800">
-                  <p className="text-[10px] text-stone-400 uppercase">Dispositivo</p>
-                  <p className="font-mono text-stone-200 mt-0.5 truncate">
-                    {logSeleccionado.dispositivo_id}
+                  <p className="text-[10px] text-stone-400 uppercase">Dispositivo / Terminal</p>
+                  <p className="font-bold text-amber-300 mt-0.5 truncate flex items-center gap-1.5">
+                    <Smartphone className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>{obtenerNombreDispositivoParaLog(logSeleccionado)}</span>
+                  </p>
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5 truncate">
+                    ID: {logSeleccionado.dispositivo_id}
                   </p>
                 </div>
                 <div className="p-3 rounded-xl bg-stone-950 border border-stone-800">
@@ -1526,6 +1691,24 @@ export const App: React.FC = () => {
                           </div>
 
                           <div>
+                            {/* Nombre Principal del Dispositivo con Botón de Editar */}
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-extrabold text-sm sm:text-base text-amber-300 flex items-center gap-1.5">
+                                {disp.nombrePrincipal}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDispositivoParaEditar(disp);
+                                  setAliasInput(disp.aliasPersonalizado || disp.nombrePrincipal);
+                                }}
+                                className="p-1 rounded-md text-stone-400 hover:text-amber-400 hover:bg-stone-800 transition-colors cursor-pointer"
+                                title="Renombrar o asignar alias a este dispositivo"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
                             <div className="flex flex-wrap items-center gap-2">
                               {/* Estado En Vivo */}
                               {disp.enLinea ? (
@@ -1540,10 +1723,12 @@ export const App: React.FC = () => {
                               )}
 
                               {/* Dirección IP Principal */}
-                              <span className="font-mono text-xs sm:text-sm font-bold text-white flex items-center gap-1">
-                                <Globe className="w-3.5 h-3.5 text-stone-400 inline" />
-                                {disp.direccionIp ? disp.direccionIp : 'Sin IP registrada'}
-                              </span>
+                              {disp.direccionIp && (
+                                <span className="font-mono text-xs font-semibold text-stone-300 flex items-center gap-1 bg-stone-900 px-2 py-0.5 rounded-md border border-stone-800">
+                                  <Globe className="w-3 h-3 text-stone-400 inline" />
+                                  {disp.direccionIp}
+                                </span>
+                              )}
 
                               {/* Alerta de Misma IP / Múltiples Sesiones */}
                               {disp.sesionesActivas > 1 && (
@@ -1626,6 +1811,93 @@ export const App: React.FC = () => {
                 Cerrar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Renombrar Dispositivo / Asignar Alias */}
+      {dispositivoParaEditar && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fade-in"
+          onClick={() => setDispositivoParaEditar(null)}
+        >
+          <div
+            className="w-full max-w-md bg-stone-900 border border-stone-700 rounded-2xl shadow-2xl p-5 text-white flex flex-col gap-4 animate-in fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">Asignar Nombre a Dispositivo</h3>
+                  <p className="text-xs text-stone-400">
+                    {dispositivoParaEditar.direccionIp
+                      ? `IP: ${dispositivoParaEditar.direccionIp}`
+                      : dispositivoParaEditar.clave}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDispositivoParaEditar(null)}
+                className="p-1 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                guardarAlias(dispositivoParaEditar.clave, aliasInput);
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-bold text-stone-300 mb-1">
+                  Nombre Personalizado
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={aliasInput}
+                  onChange={(e) => setAliasInput(e.target.value)}
+                  placeholder="Ej. iPhone de Juan, Tablet Barra..."
+                  maxLength={35}
+                  className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-stone-600 focus:outline-hidden focus:border-amber-500 font-medium"
+                />
+                <p className="text-[11px] text-stone-400 mt-1.5 leading-relaxed">
+                  Este nombre se mostrará en los logs, en el filtro y en la barra de dispositivos conectados de esta terminal.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => guardarAlias(dispositivoParaEditar.clave, '')}
+                  className="px-3 py-2 text-xs font-semibold text-stone-400 hover:text-rose-400 transition-colors cursor-pointer"
+                >
+                  Restablecer
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDispositivoParaEditar(null)}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold text-stone-300 hover:bg-stone-800 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer active:scale-95"
+                  >
+                    Guardar Nombre
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

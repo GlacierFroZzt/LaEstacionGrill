@@ -15,6 +15,7 @@ import type {
   DesglosePagoMixto,
   DivisionCuentaInfo,
   TemaVisual,
+  FormularioProductoDTO,
 } from '../types';
 import { RepositorioStorage } from '../services/repositorioStorage';
 import { servicioSincronizacion } from '../services/servicioSincronizacion';
@@ -86,6 +87,7 @@ interface RestauranteContextType {
   cuentasCerradas: Cuenta[];
   historialTurnos: TurnoCerrado[];
   pedidosCocina: PedidoCocina[];
+  productos: Producto[];
   vistaActual: VistaPrincipal;
   estaEnLinea: boolean;
   dispositivosConectados: number;
@@ -108,6 +110,10 @@ interface RestauranteContextType {
     notas: string,
     modificadores: string[]
   ) => void;
+  agregarProducto: (datos: FormularioProductoDTO) => Promise<Producto>;
+  editarProducto: (id: string, datos: FormularioProductoDTO) => Promise<void>;
+  eliminarProducto: (id: string) => Promise<void>;
+  restablecerProductos: () => void;
   modificarCantidadItem: (mesaId: string, itemId: string, delta: number) => void;
   eliminarItemComanda: (mesaId: string, itemId: string) => void;
   solicitarCuenta: (mesaId: string) => void;
@@ -156,6 +162,9 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
   );
   const [pedidosCocina, setPedidosCocina] = useState<PedidoCocina[]>(() =>
     RepositorioStorage.obtenerPedidosCocina()
+  );
+  const [productos, setProductos] = useState<Producto[]>(() =>
+    RepositorioStorage.obtenerProductos()
   );
   const [vistaActual, setVistaActual] = useState<VistaPrincipal>('mesas');
   const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState<string | null>(null);
@@ -632,6 +641,15 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
           break;
         }
 
+        case 'CATALOGO_PRODUCTOS_ACTUALIZADO': {
+          const nuevos = payload as Producto[];
+          if (Array.isArray(nuevos) && nuevos.length > 0) {
+            setProductos(nuevos);
+            RepositorioStorage.guardarProductos(nuevos);
+          }
+          break;
+        }
+
         default:
           break;
       }
@@ -955,6 +973,96 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
     },
     [mesas, cuentasActivas]
   );
+
+  /**
+   * Agrega un nuevo producto al catálogo de la taquería.
+   */
+  const agregarProducto = useCallback(
+    async (datos: FormularioProductoDTO): Promise<Producto> => {
+      const nuevoId =
+        datos.id && datos.id.trim()
+          ? datos.id.trim()
+          : `prod-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+      const nuevo: Producto = {
+        id: nuevoId,
+        nombre: datos.nombre.trim(),
+        descripcion: datos.descripcion.trim(),
+        precio: Math.max(0, Number(datos.precio) || 0),
+        categoria: datos.categoria,
+        modificadoresSugeridos:
+          datos.modificadoresSugeridos && datos.modificadoresSugeridos.length > 0
+            ? [...datos.modificadoresSugeridos]
+            : undefined,
+        imagenUrl: datos.imagenUrl,
+        requierePreparacion: datos.requierePreparacion,
+      };
+
+      setProductos((prev) => {
+        const actualizados = [nuevo, ...prev];
+        RepositorioStorage.guardarProductos(actualizados);
+        servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
+        return actualizados;
+      });
+
+      return nuevo;
+    },
+    []
+  );
+
+  /**
+   * Modifica los datos de un producto existente.
+   */
+  const editarProducto = useCallback(
+    async (id: string, datos: FormularioProductoDTO): Promise<void> => {
+      setProductos((prev) => {
+        const actualizados = prev.map((p) => {
+          if (p.id !== id) return p;
+          return {
+            ...p,
+            nombre: datos.nombre.trim(),
+            descripcion: datos.descripcion.trim(),
+            precio: Math.max(0, Number(datos.precio) || 0),
+            categoria: datos.categoria,
+            modificadoresSugeridos: datos.modificadoresSugeridos,
+            imagenUrl: datos.imagenUrl !== undefined ? datos.imagenUrl : p.imagenUrl,
+            requierePreparacion:
+              datos.requierePreparacion !== undefined
+                ? datos.requierePreparacion
+                : p.requierePreparacion,
+          };
+        });
+        RepositorioStorage.guardarProductos(actualizados);
+        servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
+        return actualizados;
+      });
+    },
+    []
+  );
+
+  /**
+   * Elimina un producto del catálogo del restaurante.
+   */
+  const eliminarProducto = useCallback(
+    async (id: string): Promise<void> => {
+      setProductos((prev) => {
+        const actualizados = prev.filter((p) => p.id !== id);
+        RepositorioStorage.guardarProductos(actualizados);
+        servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
+        return actualizados;
+      });
+    },
+    []
+  );
+
+  /**
+   * Restablece el menú al catálogo predeterminado de fábrica.
+   */
+  const restablecerProductos = useCallback((): void => {
+    const restablecidos = RepositorioStorage.restablecerProductosPredeterminados();
+    setProductos(restablecidos);
+    servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', restablecidos);
+  }, []);
 
   const agregarProductoAComanda = useCallback(
     (
@@ -2088,6 +2196,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       cuentasCerradas,
       historialTurnos,
       pedidosCocina,
+      productos,
       vistaActual,
       estaEnLinea,
       dispositivosConectados,
@@ -2104,6 +2213,10 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       abrirMesa,
       cambiarEstadoMesa,
       agregarProductoAComanda,
+      agregarProducto,
+      editarProducto,
+      eliminarProducto,
+      restablecerProductos,
       modificarCantidadItem,
       eliminarItemComanda,
       solicitarCuenta,
@@ -2131,6 +2244,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       cuentasCerradas,
       historialTurnos,
       pedidosCocina,
+      productos,
       vistaActual,
       estaEnLinea,
       dispositivosConectados,
@@ -2145,6 +2259,10 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       abrirMesa,
       cambiarEstadoMesa,
       agregarProductoAComanda,
+      agregarProducto,
+      editarProducto,
+      eliminarProducto,
+      restablecerProductos,
       modificarCantidadItem,
       eliminarItemComanda,
       solicitarCuenta,

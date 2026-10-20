@@ -1444,3 +1444,61 @@
   6. **Verificación y Compilación:**
      - Compilación exitosa en `frontend` con `pnpm --prefix frontend build` (`tsc -b && vite build`) en 1.06s.
      - Compilación exitosa en `visor-logs` con `pnpm --prefix visor-logs build` en 1.15s.
+
+
+## 27. Identidad y Nombre Legible de Dispositivos en la Terminal ("iPhone de Juan")
+- **Requerimiento del Usuario:**
+  - *"Para la terminal, que se pueda ver el nombre del dispositivo (Iphone de Juan)"*.
+- **Arquitectura de Identidad Multi-Capas:**
+  1. **Modelo y Detección en el Cliente POS ([`repositorioStorage.ts`](file:///d:/TaqueriaKm243/frontend/src/services/repositorioStorage.ts) y [`servicioTelemetria.ts`](file:///d:/TaqueriaKm243/frontend/src/services/servicioTelemetria.ts)):**
+     - Almacenamiento local persistente `taqueria_km243_nombre_dispositivo_v1`.
+     - Detección automática sugerida en base al agente de usuario (`iPhone`, `iPad`, `Terminal Android`, `PC Windows`, `Mac`).
+     - Emisión del `nombreDispositivo` en cada registro de log, error o crash enviado a Supabase.
+     - Presencia Realtime en Supabase (`canal.track` con `nombreDispositivo`, IP y plataforma) en [`servicioSupabase.ts`](file:///d:/TaqueriaKm243/frontend/src/services/servicioSupabase.ts).
+  2. **Configuración en el POS ([`ModalConfiguracionServidor.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalConfiguracionServidor.tsx)):**
+     - Nueva sección con icono de Smartphone para nombrar el dispositivo (ej. *"iPhone de Juan"*).
+     - Al guardar, actualiza de inmediato el almacenamiento y re-anuncia la presencia en vivo a la red.
+  3. **Visualización y Gestión en la Terminal ([`visor-logs/src/App.tsx`](file:///d:/TaqueriaKm243/visor-logs/src/App.tsx)):**
+     - **Jerarquía de Resolución (`resolverNombreAmigable`):**
+       1. Alias personalizado asignado por el admin en la consola (`taqueria_terminal_alias_dispositivos_v1`).
+       2. Nombre explícito reportado por la app (*"iPhone de Juan"*).
+       3. Deducción por plataforma (*"iPhone"*, *"iPad"*, *"Terminal Android"*).
+       4. Dirección IP / ID de sesión.
+     - **Modal "Dispositivos Completados y Conexiones":**
+       - Muestra el nombre legible en tipografía destacada (*"iPhone de Juan"*).
+       - Botón interactivo de edición (icono lápiz) que abre un diálogo para renombrar o reasignar alias a cualquier terminal física o IP en 1 clic.
+     - **Feed Principal de Logs:**
+       - Cada tarjeta de log muestra un badge prominente con icono móvil y el nombre del dispositivo (*"iPhone de Juan"*), seguido de su IP.
+     - **Selector de Filtro de Dispositivos:**
+       - Desplegable con formato: `🟢 iPhone de Juan (IP: 192.168.1.50) - [iOS]`.
+     - **Barra de Presencia Superior:**
+       - Muestra botones interactivos con el nombre del dispositivo para filtrar logs al instante.
+  4. **Verificación:**
+     - Compilaciones TypeScript y empaquetado de producción exitosos en `visor-logs` y `frontend` con `pnpm build`.
+
+
+## 28. Gestión Dinámica de Productos (CRUD Completo), Soporte de Imágenes y Gestos Contextuales (Long-Press / Clic Derecho)
+- **Requerimiento del Usuario:**
+  - *"Haz que se puedan agregar y eliminar productos, asi como editarlos, y ademas la opcion de poder subir las imagenes del producto o imagenes de ser requeridas, que el editar, eliminar y mostrar imagen sea manteniendo pulsada la tarjeta del producto (o dandole click derecho)"*.
+- **Decisiones Arquitectónicas y Solución Implementada:**
+  1. **Tipado Estricto de Dominio ([`frontend/src/types/index.ts`](file:///d:/TaqueriaKm243/frontend/src/types/index.ts)):**
+     - Se definió la interfaz `FormularioProductoDTO` que modela la creación y edición tipada (nombre, precio, descripción, categoría, modificadores, imagen, requierePreparacion).
+     - Se añadió el evento de red `'CATALOGO_PRODUCTOS_ACTUALIZADO'` a `TipoEventoSync` para propagación en tiempo real.
+  2. **Persistencia Híbrida Offline ([`frontend/src/services/repositorioStorage.ts`](file:///d:/TaqueriaKm243/frontend/src/services/repositorioStorage.ts)):**
+     - Clave `taqueria_km243_productos_v1`.
+     - Métodos `obtenerProductos()` (con inicialización automática desde `PRODUCTOS_INICIALES`), `guardarProductos(productos)` y `restablecerProductosPredeterminados()`.
+  3. **Compresión de Imágenes en el Cliente ([`frontend/src/utils/compresorImagenes.ts`](file:///d:/TaqueriaKm243/frontend/src/utils/compresorImagenes.ts)):**
+     - Procesamiento en memoria mediante Canvas HTML5: escala proporcional a máximo 640x640 px con compresión WebP (o JPEG como fallback) a calidad 0.82.
+     - Reduce fotos de cámara de 3-10 MB a ~35-60 KB, eliminando riesgos de cuota de almacenamiento y habilitando funcionamiento 100% offline en tablets y Android WebView.
+  4. **Hook de Gestos Multi-Dispositivo ([`frontend/src/hooks/usePulsacionProlongada.ts`](file:///d:/TaqueriaKm243/frontend/src/hooks/usePulsacionProlongada.ts)):**
+     - Distingue transparentemente entre un toque normal (`tap` para ordenar), un deslizamiento con el dedo (`scroll` con umbral de 10px que cancela el timer) y la pulsación intencional de 500 ms (`long-press`).
+     - Al activarse el long-press emite vibración háptica suave (`navigator.vibrate(35)`), levanta una bandera de bloqueo para prevenir clics accidentales al levantar el dedo, y abre el menú contextual.
+     - Soporta `onContextMenu` para computadoras de escritorio y laptops, suprimiendo el menú nativo del navegador.
+  5. **Modales y Componentes de Interfaz:**
+     - [`ModalFormularioProducto.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalFormularioProducto.tsx): Formulario de creación y edición con selector de imagen, previsualización, modificadores interactivos, selector de categoría y switch para cocina/KDS.
+     - [`ModalOpcionesProducto.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalOpcionesProducto.tsx): Menú contextual con accesos a ver foto, editar, eliminar y cancelar.
+     - [`ModalVisorImagen.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalVisorImagen.tsx): Visor ampliado de alta fidelidad con datos del platillo y botón de edición.
+     - [`Comandero.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/Comandero.tsx): Botón "+ Nuevo Platillo", tarjeta de producto memoizada con miniatura y diálogo modal de confirmación con salvaguarda contable.
+  6. **Verificación y Empaquetado:**
+     - Compilación estricta y empaquetado de producción con Vite superados sin errores ni advertencias.
+     - Sincronización automática de bundles web con las plataformas nativas de Android e iOS (`pnpm run sync:all`).

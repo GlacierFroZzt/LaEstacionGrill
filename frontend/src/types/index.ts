@@ -48,6 +48,17 @@ export interface Producto {
   readonly requierePreparacion?: boolean; // false para bebidas directas que lleva el mesero
 }
 
+export interface FormularioProductoDTO {
+  readonly id?: string;
+  readonly nombre: string;
+  readonly descripcion: string;
+  readonly precio: number;
+  readonly categoria: CategoriaProducto;
+  readonly modificadoresSugeridos?: readonly string[];
+  readonly imagenUrl?: string;
+  readonly requierePreparacion?: boolean;
+}
+
 export interface ItemComanda {
   readonly id: string;
   readonly productoId: string;
@@ -169,7 +180,8 @@ export type TipoEventoSync =
   | 'ESTADO_CONEXION_ACTUALIZADO'
   | 'DISPOSITIVOS_ACTUALIZADOS'
   | 'PRESENCIA_ANUNCIO'
-  | 'PRESENCIA_ACK';
+  | 'PRESENCIA_ACK'
+  | 'CATALOGO_PRODUCTOS_ACTUALIZADO';
 
 export interface MensajeSincronizacion {
   readonly id: string;

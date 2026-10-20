@@ -1,7 +1,7 @@
 {
-  "version": "1.2.5",
+  "version": "1.2.6",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792348800000,
-  "fecha": "19 de octubre de 2026",
-  "notas": "Renombrado dinamico de mesas y traslado de comandas activas a mesas libres."
+  "timestamp": 1792435200000,
+  "fecha": "20 de octubre de 2026",
+  "notas": "CRUD completo de productos (crear, editar, eliminar), subida y compresion de imagenes y menu contextual con pulsacion prolongada (long-press) o clic derecho."
 }

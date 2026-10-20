@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, RefreshCw, CheckCircle2, AlertCircle, Lock, KeyRound } from 'lucide-react';
+import { ShieldCheck, RefreshCw, CheckCircle2, AlertCircle, Lock, KeyRound, Smartphone } from 'lucide-react';
 import { servicioSupabase } from '../services/servicioSupabase';
 import { servicioSeguridadPin } from '../services/servicioSeguridadPin';
+import { RepositorioStorage } from '../services/repositorioStorage';
 
 interface PropsModalConfiguracionServidor {
   abierto: boolean;
@@ -26,6 +27,13 @@ export const ModalConfiguracionServidor: React.FC<PropsModalConfiguracionServido
     tipo: null,
     texto: '',
   });
+  const [nombreDispositivo, setNombreDispositivo] = useState<string>(() =>
+    RepositorioStorage.obtenerNombreDispositivo()
+  );
+  const [mensajeNombre, setMensajeNombre] = useState<{ tipo: 'exito' | 'error' | null; texto: string }>({
+    tipo: null,
+    texto: '',
+  });
 
   useEffect(() => {
     if (abierto) {
@@ -33,6 +41,8 @@ export const ModalConfiguracionServidor: React.FC<PropsModalConfiguracionServido
       setMensajePin({ tipo: null, texto: '' });
       setPinActualInput('');
       setPinNuevoInput('');
+      setNombreDispositivo(RepositorioStorage.obtenerNombreDispositivo());
+      setMensajeNombre({ tipo: null, texto: '' });
     }
   }, [abierto]);
 
@@ -163,6 +173,76 @@ export const ModalConfiguracionServidor: React.FC<PropsModalConfiguracionServido
             </div>
           </div>
         )}
+
+        {/* Sección de Nombre del Dispositivo */}
+        <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-xl space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
+              <Smartphone className="w-4 h-4 text-amber-400" />
+              <span>Nombre de este Dispositivo / Terminal</span>
+            </div>
+            <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+              Auditoría
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Identifica a este celular o tablet en la terminal de auditoría, logs y conexiones (ej:{' '}
+            <strong className="text-slate-300">iPhone de Juan</strong>,{' '}
+            <strong className="text-slate-300">Tablet Barra</strong>).
+          </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const limpio = nombreDispositivo.trim();
+              if (!limpio) {
+                setMensajeNombre({ tipo: 'error', texto: 'El nombre no puede estar vacío.' });
+                return;
+              }
+              RepositorioStorage.guardarNombreDispositivo(limpio);
+              servicioSupabase.actualizarPresencia().catch(console.error);
+              setMensajeNombre({ tipo: 'exito', texto: `¡Nombre guardado como "${limpio}"!` });
+              setTimeout(() => setMensajeNombre({ tipo: null, texto: '' }), 3500);
+            }}
+            className="flex items-center gap-2"
+          >
+            <input
+              type="text"
+              value={nombreDispositivo}
+              onChange={(e) => {
+                setNombreDispositivo(e.target.value);
+                if (mensajeNombre.tipo) setMensajeNombre({ tipo: null, texto: '' });
+              }}
+              placeholder="Ej. iPhone de Juan, Tablet Caja..."
+              maxLength={35}
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-amber-500 font-medium"
+            />
+            <button
+              type="submit"
+              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer active:scale-95 shrink-0 shadow-sm"
+            >
+              Guardar
+            </button>
+          </form>
+
+          {mensajeNombre.tipo && (
+            <div
+              className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                mensajeNombre.tipo === 'exito'
+                  ? 'bg-emerald-950/60 border border-emerald-700/60 text-emerald-300'
+                  : 'bg-rose-950/60 border border-rose-700/60 text-rose-300'
+              }`}
+            >
+              {mensajeNombre.tipo === 'exito' ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              )}
+              <span>{mensajeNombre.texto}</span>
+            </div>
+          )}
+        </div>
 
         {/* Sección de Seguridad y PIN de Terminal */}
         <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-xl space-y-3">

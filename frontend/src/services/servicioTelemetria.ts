@@ -1,5 +1,6 @@
 import { servicioSupabase } from './servicioSupabase';
 import { servicioDeteccionIp } from './servicioDeteccionIp';
+import { RepositorioStorage } from './repositorioStorage';
 
 export type NivelLog = 'CRASH' | 'ERROR' | 'WARN' | 'INFO';
 
@@ -33,6 +34,7 @@ export class ServicioTelemetria {
       // Registrar log informativo de dispositivo conectado para que aparezca de inmediato en la terminal
       this.registrarInfo(`Dispositivo conectado al restaurante`, {
         tipo: 'inicio_sesion',
+        nombreDispositivo: RepositorioStorage.obtenerNombreDispositivo(),
         ip: ip || 'desconocido',
         plataforma: typeof navigator !== 'undefined' ? navigator.platform : 'web',
         resolucion: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : 'N/A',
@@ -133,6 +135,7 @@ export class ServicioTelemetria {
         mensaje,
         detalles: {
           ...detalles,
+          nombreDispositivo: detalles.nombreDispositivo || RepositorioStorage.obtenerNombreDispositivo(),
           ip: detalles.ip || servicioDeteccionIp.obtenerIpCache() || 'desconocido',
           userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A',
           url: typeof window !== 'undefined' ? window.location.href : 'N/A',
@@ -305,6 +308,14 @@ export class ServicioTelemetria {
     } catch {
       return [];
     }
+  }
+
+  public obtenerNombreDispositivo(): string {
+    return RepositorioStorage.obtenerNombreDispositivo();
+  }
+
+  public guardarNombreDispositivo(nombre: string): void {
+    RepositorioStorage.guardarNombreDispositivo(nombre);
   }
 }
 

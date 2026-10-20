@@ -148,6 +148,7 @@ export class ServicioSupabaseLogs {
             listaPresencias.push({
               key,
               dispositivoId: item.dispositivoId || key,
+              nombreDispositivo: (item as unknown as { nombreDispositivo?: string }).nombreDispositivo,
               ip: item.ip,
               plataforma: item.plataforma,
               userAgent: item.userAgent,

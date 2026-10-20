@@ -2,6 +2,7 @@ import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabas
 import type { Mesa, Cuenta, PedidoCocina, CorteCaja, TurnoCerrado } from '../types';
 import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
 import { servicioDeteccionIp } from './servicioDeteccionIp';
+import { RepositorioStorage } from './repositorioStorage';
 
 export interface AccionOffline {
   id: string;
@@ -313,11 +314,13 @@ class ServicioSupabase {
             this.intentosReconexion = 0;
             this.notificarListeners('ESTADO_CONEXION_ACTUALIZADO', { conectado: true });
 
-            // Rastrear la presencia de este dispositivo en Supabase con IP y plataforma
+            // Rastrear la presencia de este dispositivo en Supabase con IP, plataforma y nombre legible
             try {
               const ip = await servicioDeteccionIp.obtenerIp();
+              const nombreDispositivo = RepositorioStorage.obtenerNombreDispositivo();
               await this.canal?.track({
                 dispositivoId: this.idDispositivo,
+                nombreDispositivo,
                 ip: ip || 'desconocido',
                 plataforma: typeof navigator !== 'undefined' ? navigator.platform : 'web',
                 userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -340,6 +343,29 @@ class ServicioSupabase {
     } catch (err: unknown) {
       console.error('[ServicioSupabase] Error al suscribir a Realtime:', err);
       this.verificarSaludRapida();
+    }
+  }
+
+  /**
+   * Re-anuncia la presencia de este dispositivo con su nombre actualizado.
+   */
+  public async actualizarPresencia(): Promise<void> {
+    if (!this.canal) return;
+    try {
+      const ip = await servicioDeteccionIp.obtenerIp();
+      const nombreDispositivo = RepositorioStorage.obtenerNombreDispositivo();
+      await this.canal.track({
+        dispositivoId: this.idDispositivo,
+        nombreDispositivo,
+        ip: ip || 'desconocido',
+        plataforma: typeof navigator !== 'undefined' ? navigator.platform : 'web',
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+        conectadoEn: new Date().toISOString(),
+        rol: 'punto-de-venta',
+      });
+      console.log(`[ServicioSupabase] Presencia actualizada: "${nombreDispositivo}"`);
+    } catch (err: unknown) {
+      console.warn('[ServicioSupabase] Error al actualizar presencia de dispositivo:', err);
     }
   }
 
