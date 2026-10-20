@@ -15,6 +15,8 @@ import {
   Sparkles,
   Pencil,
   ArrowRightLeft,
+  BellRing,
+  Flame,
 } from 'lucide-react';
 import type { Mesa, TipoArea } from '../types';
 import { useRestaurante } from '../context/RestauranteContext';
@@ -44,6 +46,8 @@ export const DashboardMesas: React.FC = () => {
     liberarMesaManual,
     tema,
     nivelOroLiquido,
+    pedidosCocina,
+    cambiarEstadoPedidoCocina,
   } = useRestaurante();
 
   const [filtroArea, setFiltroArea] = useState<FiltroZona>('todas');
@@ -74,6 +78,11 @@ export const DashboardMesas: React.FC = () => {
   const libres = mesas.filter((m) => m.estado === 'libre').length;
   const ocupadas = mesas.filter((m) => m.estado === 'ocupada').length;
   const porCobrar = mesas.filter((m) => m.estado === 'por_cobrar').length;
+
+  // Conteo de pedidos activos en cocina
+  const pedidosCocinaActivos = pedidosCocina.filter((p) => p.estado !== 'entregado');
+  const totalCocinaListos = pedidosCocinaActivos.filter((p) => p.estado === 'listo').length;
+  const totalCocinaEnPrep = pedidosCocinaActivos.filter((p) => p.estado === 'en_preparacion').length;
 
   const handleMesaClick = (mesa: Mesa): void => {
     if (modoEdicion) return;
@@ -278,6 +287,24 @@ export const DashboardMesas: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-amber-500"></span>
               {ocupadas} ocup
             </span>
+            {totalCocinaEnPrep > 0 && (
+              <>
+                <span className="text-stone-400">|</span>
+                <span className="flex items-center gap-1 text-orange-500 font-black animate-pulse" title="Pedidos al carbón en cocina">
+                  <Flame className="w-3 h-3 text-orange-500 fill-orange-500" />
+                  {totalCocinaEnPrep} prep
+                </span>
+              </>
+            )}
+            {totalCocinaListos > 0 && (
+              <>
+                <span className="text-stone-400">|</span>
+                <span className="flex items-center gap-1 text-emerald-500 font-black animate-bounce" title="¡Pedidos listos para servir!">
+                  <BellRing className="w-3 h-3 text-emerald-400" />
+                  {totalCocinaListos} listos
+                </span>
+              </>
+            )}
             {porCobrar > 0 && (
               <>
                 <span className="text-stone-400">|</span>
@@ -470,10 +497,29 @@ export const DashboardMesas: React.FC = () => {
             }
 
             // --- CASO 2: MESA / PEDIDO ACTIVO (OCUPADA O POR COBRAR) ---
+            const pedidosMesa = pedidosCocina.filter(
+              (p) => p.mesaId === mesa.id && p.estado !== 'entregado'
+            );
+            const pedidosListosMesa = pedidosMesa.filter((p) => p.estado === 'listo');
+            const pedidosEnPrepMesa = pedidosMesa.filter((p) => p.estado === 'en_preparacion');
+            const pedidosPendientesMesa = pedidosMesa.filter((p) => p.estado === 'pendiente');
+
+            const tienePedidoListo = pedidosListosMesa.length > 0;
+            const tienePedidoEnPrep = pedidosEnPrepMesa.length > 0;
+            const tienePedidoPendiente = pedidosPendientesMesa.length > 0;
+
             let claseBordeLiquido = '';
             let fondoInterior = esClaro ? 'bg-amber-50/90' : 'bg-stone-900/95';
 
-            if (esPorCobrar) {
+            if (tienePedidoListo) {
+              // COLOR ESPECIAL VERDE ESMERALDA RESPLANDECIENTE: ¡Pedido Listo en Cocina!
+              claseBordeLiquido = 'tarjeta-borde-listo-cocina';
+              fondoInterior = esClaro ? 'bg-emerald-50/95' : 'bg-emerald-950/85';
+            } else if (tienePedidoEnPrep) {
+              // COLOR ESPECIAL NARANJA BRASA: Cocina está preparando la orden
+              claseBordeLiquido = 'tarjeta-borde-preparando-cocina';
+              fondoInterior = esClaro ? 'bg-orange-50/90' : 'bg-stone-900/95';
+            } else if (esPorCobrar) {
               claseBordeLiquido = 'tarjeta-borde-azul-liquido animacion-por-cobrar';
               fondoInterior = esClaro ? 'bg-blue-50/95' : 'bg-stone-900/95';
             } else if (esDomicilio) {
@@ -560,15 +606,51 @@ export const DashboardMesas: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Centro: Total en Grande */}
-                <div className="my-2 flex items-center justify-between">
-                  <span className="text-xs text-stone-400 flex items-center gap-0.5">
-                    <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
-                    Total:
-                  </span>
-                  <span className="text-lg sm:text-xl font-black text-emerald-500 tabular-nums">
-                    {formatearMoneda(mesa.totalParcial)}
-                  </span>
+                {/* Centro: Total en Grande e Indicador de Cocina */}
+                <div className="my-1.5 flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-stone-400 flex items-center gap-0.5">
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+                      Total:
+                    </span>
+                    <span className="text-lg sm:text-xl font-black text-emerald-500 tabular-nums">
+                      {formatearMoneda(mesa.totalParcial)}
+                    </span>
+                  </div>
+
+                  {/* Banners e Insignias de Estado de Cocina en la Mesa */}
+                  {tienePedidoListo ? (
+                    <div className="flex items-center justify-between px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 animate-pulse text-xs font-black shadow-sm">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <BellRing className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="truncate">¡PEDIDO LISTO!</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          pedidosListosMesa.forEach((p) => {
+                            cambiarEstadoPedidoCocina(p.id, 'entregado');
+                          });
+                          mostrarMensaje(`Se marcó como entregado el pedido de ${mesa.nombre}.`, 'exito');
+                        }}
+                        className="px-2 py-0.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-[10px] uppercase shadow-xs transition-transform active:scale-90 cursor-pointer shrink-0"
+                        title="Marcar pedido como servido y entregado a los clientes"
+                      >
+                        ✓ Entregar
+                      </button>
+                    </div>
+                  ) : tienePedidoEnPrep ? (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-orange-500/15 border border-orange-500/40 text-orange-400 text-xs font-extrabold">
+                      <Flame className="w-3.5 h-3.5 text-orange-400 fill-orange-400 shrink-0 animate-bounce" />
+                      <span className="truncate">Cocina preparando al carbón...</span>
+                    </div>
+                  ) : tienePedidoPendiente ? (
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold text-amber-400/80">
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Orden enviada a cocina</span>
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Pie con Acciones Compactas */}

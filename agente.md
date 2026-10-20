@@ -1571,3 +1571,34 @@
      - Todas las mutaciones sobre `'mesa-demo-tutorial'` o `'pedido-cocina-demo-tutorial'` modifican únicamente el estado en memoria sin persistir en `RepositorioStorage`, `servicioSupabase` ni emitir por `servicioSincronizacion`.
   3. **Verificación y Despliegue:**
      - Compilación estricta (`tsc -b && vite build`) exitosa y despliegue OTA v1.2.9.
+
+
+## 33. Corrección de Detección Automática OTA y Notificaciones de Cocina (Colores Especiales en Mesas)
+- **Requerimientos del Usuario:**
+  1. *"Revisa porque creo que no anda detectando automaticamente cuando hay actualizacion OTA"*.
+  2. *"Que se reciba una notificacion o color especial en la mesa indicando que el pedido o pedidos estan listos, osea que ya los esta preparando o los termino de preparar cocina"*.
+- **Diagnóstico y Causas Raíz de la Falla en Detección OTA:**
+  1. **Sobreescritura Prematura en `localStorage`:**
+     - En `ServicioActualizaciones.aplicarActualizacion()`, la clave `taqueria_km243_version_instalada` se sobreescribía con la versión remota ANTES de que los archivos locales fueran descargados y montados en memoria.
+     - En las verificaciones posteriores, `compararVersiones(infoLocalArchivo, versionLocal)` ignoraba el archivo local físico porque su versión era menor que el número ficticio inflado en `localStorage`. Como resultado, `esSuperior` siempre evaluaba en `false` y el cliente se quedaba bloqueado en la versión antigua pensando que ya estaba actualizado.
+  2. **Bloqueo por Cooldowns Excesivos:**
+     - Había un cooldown de 10 minutos y un bloqueo en `sessionStorage` de 5 minutos, impidiendo que el usuario viera la actualización inmediatamente al recargar la app.
+     - El intervalo periódico era de 15 minutos, obligando a esperar un cuarto de hora para un chequeo automático.
+  3. **Falta de Inyección de Versión Inmutable:**
+     - El bundle en ejecución no tenía la versión embebida en memoria para compararse contra el servidor.
+- **Solución Implementada:**
+  1. **Inyección Inmutable de Versión en Tiempo de Compilación ([`vite.config.ts`](file:///d:/TaqueriaKm243/frontend/vite.config.ts)):**
+     - Se definió `__APP_VERSION_INFO__` leyendo `public/version.json` durante el build. El código JavaScript en memoria conoce su versión exacta e inmutable sin depender de `localStorage`.
+  2. **Detección OTA Reactiva y Ultrarrápida ([`servicioActualizaciones.ts`](file:///d:/TaqueriaKm243/frontend/src/services/servicioActualizaciones.ts)):**
+     - Chequeo periódico proactivo cada 45 segundos.
+     - Chequeo instantáneo al regresar a la app (`visibilitychange: visible` y `focus` al desbloquear la tablet o celular).
+     - Chequeo instantáneo al recuperar conexión a internet (`online`).
+     - Banner flotante con botón directo en la interfaz cuando se detecta una nueva versión disponible.
+     - Cooldown nativo en Android reducido de 60s a 10s.
+  3. **Colores Especiales y Notificaciones de Cocina para Mesas ([`DashboardMesas.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/DashboardMesas.tsx), [`sonidoCocina.ts`](file:///d:/TaqueriaKm243/frontend/src/utils/sonidoCocina.ts), [`index.css`](file:///d:/TaqueriaKm243/frontend/src/index.css) y [`App.tsx`](file:///d:/TaqueriaKm243/frontend/src/App.tsx)):**
+     - **Pedido Listo en Cocina (`listo`):** La mesa en el mapa adquiere un borde resplandeciente verde esmeralda con animación pulsante (`.tarjeta-borde-listo-cocina`) y fondo esmeralda. Muestra la insignia `🔔 ¡PEDIDO LISTO EN COCINA!` con un botón rápido de un toque **"✓ Entregar"** para despacharlo directamente sin ir a la cocina. Se emite un timbre acústico especial (`reproducirTimbrePedidoListo`) y vibración háptica.
+     - **En Preparación al Carbón (`en_preparacion`):** La mesa adopta un borde naranja fuego (`.tarjeta-borde-preparando-cocina`) y la insignia `🔥 Cocina preparando al carbón...`.
+     - **Semáforo Superior:** Incluye contadores en vivo de pedidos en preparación (`🔥 X prep`) y listos (`🔔 X listos`).
+     - **Toasts Flotantes Globales:** El mesero recibe el aviso en tiempo real aunque esté en el comandero de otra mesa.
+- **Verificación y Despliegue:**
+  - Compilación TypeScript estricta y empaquetado Vite v1.3.0 exitosos.

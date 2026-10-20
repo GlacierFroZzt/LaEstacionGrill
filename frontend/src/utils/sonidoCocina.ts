@@ -144,10 +144,56 @@ class GestorAudioCocina {
   public estaDesbloqueado(): boolean {
     return this.desbloqueado || (this.audioContext ? this.audioContext.state === 'running' : false);
   }
+
+  /**
+   * Reproduce un timbre doble festivo (Do6 -> Mi6 -> Sol6) para avisar al mesero
+   * que un pedido está LISTO para recogerse en barra/cocina.
+   */
+  public async reproducirTimbreListo(): Promise<void> {
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate([120, 60, 180]);
+      }
+
+      const ctx = this.obtenerContexto();
+      if (!ctx) return;
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      const ahora = ctx.currentTime;
+      const notas = [1046.5, 1318.5, 1567.98]; // Do6, Mi6, Sol6
+
+      notas.forEach((frecuencia, idx) => {
+        const inicio = ahora + idx * 0.11;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(frecuencia, inicio);
+
+        gain.gain.setValueAtTime(0.28, inicio);
+        gain.gain.exponentialRampToValueAtTime(0.001, inicio + 0.65);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(inicio);
+        osc.stop(inicio + 0.65);
+      });
+    } catch (error: unknown) {
+      console.warn('[GestorAudioCocina] No se pudo reproducir timbre de pedido listo:', error);
+    }
+  }
 }
 
 export const gestorAudioCocina = GestorAudioCocina.obtenerInstancia();
 
 export const reproducirCampanaCocina = (): void => {
   void gestorAudioCocina.reproducirCampana();
+};
+
+export const reproducirTimbrePedidoListo = (): void => {
+  void gestorAudioCocina.reproducirTimbreListo();
 };

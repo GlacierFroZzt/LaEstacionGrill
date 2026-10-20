@@ -193,8 +193,8 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun descargarYActualizar(urlZip: String?) {
             val ahora = System.currentTimeMillis()
-            // Protección estricta contra bucles de descarga: mínimo 60 segundos entre intentos
-            if (ahora - ultimaDescargaOtaMs < 60_000L) {
+            // Protección contra descargas duplicadas concurrentes (10 segundos)
+            if (ahora - ultimaDescargaOtaMs < 10_000L) {
                 return
             }
             ultimaDescargaOtaMs = ahora

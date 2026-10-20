@@ -27,10 +27,10 @@ const ModalConfiguracionServidor = lazyConReintento(() =>
   import('./components/ModalConfiguracionServidor').then((m) => ({ default: m.ModalConfiguracionServidor }))
 );
 
-import { Utensils, Receipt } from 'lucide-react';
+import { Utensils, Receipt, BellRing, Flame, Sparkles, X, Check, RefreshCw } from 'lucide-react';
 import { formatearMoneda } from './utils/formateadores';
 import { LienzoOroLiquido } from './components/LienzoOroLiquido';
-import { servicioActualizaciones } from './services/servicioActualizaciones';
+import { servicioActualizaciones, type ResultadoVerificacionOta } from './services/servicioActualizaciones';
 import { servicioLicencia, type EstadoLicencia } from './services/servicioLicencia';
 import { PantallaBloqueoLicencia } from './components/PantallaBloqueoLicencia';
 import { servicioSeguridadPin, type EstadoSeguridadPin } from './services/servicioSeguridadPin';
@@ -54,6 +54,9 @@ const PantallaPrincipal: React.FC = () => {
     parametrosOro,
     pasoTutorialDemo,
     setPasoTutorialDemo,
+    notificacionesCocina,
+    descartarNotificacionCocina,
+    cambiarEstadoPedidoCocina,
   } = useRestaurante();
   const [modalCobroAbierto, setModalCobroAbierto] = useState<boolean>(false);
   const [modalCorteAbierto, setModalCorteAbierto] = useState<boolean>(false);
@@ -62,6 +65,15 @@ const PantallaPrincipal: React.FC = () => {
   const [tourTutorialAbierto, setTourTutorialAbierto] = useState<boolean>(false);
   const [manualFuncionesAbierto, setManualFuncionesAbierto] = useState<boolean>(false);
   const [pestanaMovil, setPestanaMovil] = useState<'menu' | 'cuenta'>('menu');
+  const [actualizacionOtaInfo, setActualizacionOtaInfo] = useState<ResultadoVerificacionOta | null>(null);
+  const [aplicandoOtaManual, setAplicandoOtaManual] = useState<boolean>(false);
+
+  // Suscribirse a novedades de actualización del sistema OTA
+  useEffect(() => {
+    return servicioActualizaciones.suscribir((resultado) => {
+      setActualizacionOtaInfo(resultado);
+    });
+  }, []);
 
   // Abrir automáticamente el ModalCobro real durante el Paso 5 del tutorial y cerrarlo al cambiar de paso
   useEffect(() => {
@@ -204,6 +216,118 @@ const PantallaPrincipal: React.FC = () => {
 
       {/* Área de trabajo dinámica: Mesas, Comandero o Pantalla de Cocina (KDS) */}
       <main className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
+        {/* Banner Flotante de Actualización OTA Detectada */}
+        {actualizacionOtaInfo?.hayActualizacion && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-3 animate-in fade-in slide-in-from-top-3 duration-200 pointer-events-auto">
+            <div className="p-2.5 px-3.5 rounded-2xl bg-amber-950/95 border-2 border-amber-400 text-amber-200 shadow-2xl flex items-center justify-between gap-2.5 backdrop-blur-md">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 rounded-xl bg-amber-500 text-stone-950">
+                  <Sparkles className="w-4 h-4 animate-spin stroke-[2.5]" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <span className="text-[10px] uppercase font-black tracking-wider text-amber-400 block">
+                    Actualización OTA Lista
+                  </span>
+                  <span className="text-xs font-bold text-stone-100 truncate block">
+                    v{actualizacionOtaInfo.versionRemota} disponible
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={aplicandoOtaManual}
+                onClick={async () => {
+                  setAplicandoOtaManual(true);
+                  try {
+                    await servicioActualizaciones.aplicarActualizacion();
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setAplicandoOtaManual(false);
+                  }
+                }}
+                className="py-1 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-stone-950 font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${aplicandoOtaManual ? 'animate-spin' : ''}`} />
+                <span>{aplicandoOtaManual ? 'Aplicando...' : 'Actualizar'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Toasts Flotantes de Pedidos Listos / En Preparación de Cocina para Meseros */}
+        {vistaActual !== 'cocina' && notificacionesCocina.length > 0 && (
+          <div className="absolute top-14 right-3 sm:right-6 z-40 flex flex-col gap-2 max-w-sm w-full pointer-events-auto">
+            {notificacionesCocina.map((notif) => {
+              const esListo = notif.estado === 'listo';
+              return (
+                <div
+                  key={notif.id}
+                  className={`p-3 rounded-2xl shadow-2xl border flex items-center justify-between gap-2.5 animate-in slide-in-from-top-2 duration-200 ${
+                    esListo
+                      ? 'bg-emerald-950/95 border-emerald-400 text-emerald-100 shadow-emerald-950/70'
+                      : 'bg-stone-900/95 border-orange-500/80 text-orange-100 shadow-stone-950/70'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div
+                      className={`p-2 rounded-xl shrink-0 ${
+                        esListo
+                          ? 'bg-emerald-500 text-stone-950 animate-bounce'
+                          : 'bg-orange-500 text-stone-950'
+                      }`}
+                    >
+                      {esListo ? (
+                        <BellRing className="w-4 h-4 stroke-[2.5]" />
+                      ) : (
+                        <Flame className="w-4 h-4 stroke-[2.5]" />
+                      )}
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <span
+                        className={`text-[10px] uppercase font-black tracking-wider block ${
+                          esListo ? 'text-emerald-400' : 'text-orange-400'
+                        }`}
+                      >
+                        {esListo ? '¡Pedido Listo en Barra/Cocina!' : 'Al Carbón en Cocina'}
+                      </span>
+                      <h4 className="text-xs font-black truncate text-stone-100">{notif.nombreMesa}</h4>
+                      {notif.resumenItems && (
+                        <p className="text-[11px] text-stone-300 line-clamp-1">{notif.resumenItems}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {esListo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          cambiarEstadoPedidoCocina(notif.pedidoId, 'entregado');
+                          descartarNotificacionCocina(notif.id);
+                        }}
+                        className="py-1 px-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                        title="Marcar como entregado a los clientes"
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Entregado</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => descartarNotificacionCocina(notif.id)}
+                      className="p-1 rounded-lg text-stone-400 hover:text-white transition-colors cursor-pointer"
+                      title="Descartar aviso"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Capa de Fondo de Oro Líquido Derretido Continuo */}
         {nivelOroLiquido !== 'apagado' && (
           <div

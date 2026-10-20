@@ -21,8 +21,19 @@ import { RepositorioStorage } from '../services/repositorioStorage';
 import { servicioSincronizacion } from '../services/servicioSincronizacion';
 import { servicioSupabase } from '../services/servicioSupabase';
 import { servicioTelemetria } from '../services/servicioTelemetria';
-import { reproducirCampanaCocina } from '../utils/sonidoCocina';
+import { reproducirCampanaCocina, reproducirTimbrePedidoListo } from '../utils/sonidoCocina';
 import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
+
+export interface NotificacionCocinaMesero {
+  readonly id: string;
+  readonly pedidoId: string;
+  readonly mesaId: string;
+  readonly nombreMesa: string;
+  readonly estado: 'en_preparacion' | 'listo';
+  readonly mensaje: string;
+  readonly resumenItems: string;
+  readonly timestamp: number;
+}
 
 export type NivelOroLiquido = 'intenso' | 'elegante' | 'sutil' | 'apagado';
 
@@ -144,6 +155,8 @@ interface RestauranteContextType {
   alternarItemCompletadoCocina: (pedidoId: string, itemId: string) => void;
   pasoTutorialDemo: number;
   setPasoTutorialDemo: (paso: number) => void;
+  notificacionesCocina: NotificacionCocinaMesero[];
+  descartarNotificacionCocina: (id: string) => void;
 }
 
 const MESA_DEMO_TUTORIAL_ID = 'mesa-demo-tutorial';
@@ -295,6 +308,98 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // reviertan clics rápidos del cocinero (protección de condiciones de carrera)
   const ultimasModificacionesCocinaRef = useRef<Map<string, number>>(new Map());
   const timersGuardadoCocinaRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Notificaciones en tiempo real para meseros cuando cocina prepara o termina pedidos
+  const [notificacionesCocina, setNotificacionesCocina] = useState<NotificacionCocinaMesero[]>([]);
+  const estadosPreviosCocinaRef = useRef<Map<string, EstadoPedidoCocina> | null>(null);
+
+  const descartarNotificacionCocina = useCallback((id: string): void => {
+    setNotificacionesCocina((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  useEffect(() => {
+    // En el primer render tras montar, registramos los estados actuales sin disparar alertas pasadas
+    if (estadosPreviosCocinaRef.current === null) {
+      const mapaInicial = new Map<string, EstadoPedidoCocina>();
+      for (const p of pedidosCocina) {
+        mapaInicial.set(p.id, p.estado);
+      }
+      estadosPreviosCocinaRef.current = mapaInicial;
+      return;
+    }
+
+    const mapaPrevio = estadosPreviosCocinaRef.current;
+    const nuevasAlertas: NotificacionCocinaMesero[] = [];
+    const idsPedidosEntregados = new Set<string>();
+    let sonarTimbreListo = false;
+
+    for (const p of pedidosCocina) {
+      const estadoAnterior = mapaPrevio.get(p.id);
+      if (estadoAnterior !== p.estado) {
+        mapaPrevio.set(p.id, p.estado);
+
+        // Si el pedido ya estaba registrado y cambió a 'en_preparacion' o 'listo'
+        if (estadoAnterior !== undefined) {
+          const resumen = p.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(', ');
+          if (p.estado === 'en_preparacion' && estadoAnterior === 'pendiente') {
+            nuevasAlertas.push({
+              id: `notif-prep-${p.id}-${Date.now()}`,
+              pedidoId: p.id,
+              mesaId: p.mesaId,
+              nombreMesa: p.nombreMesa,
+              estado: 'en_preparacion',
+              mensaje: `Cocina está preparando el pedido de ${p.nombreMesa}`,
+              resumenItems: resumen,
+              timestamp: Date.now(),
+            });
+          } else if (p.estado === 'listo' && estadoAnterior !== 'listo') {
+            sonarTimbreListo = true;
+            nuevasAlertas.push({
+              id: `notif-listo-${p.id}-${Date.now()}`,
+              pedidoId: p.id,
+              mesaId: p.mesaId,
+              nombreMesa: p.nombreMesa,
+              estado: 'listo',
+              mensaje: `¡Pedido LISTO en cocina para ${p.nombreMesa}!`,
+              resumenItems: resumen,
+              timestamp: Date.now(),
+            });
+          } else if (p.estado === 'entregado') {
+            idsPedidosEntregados.add(p.id);
+          }
+        }
+      }
+    }
+
+    if (sonarTimbreListo) {
+      reproducirTimbrePedidoListo();
+    }
+
+    if (nuevasAlertas.length > 0 || idsPedidosEntregados.size > 0) {
+      setNotificacionesCocina((prev) => {
+        const idsActualizados = new Set(nuevasAlertas.map((a) => a.pedidoId));
+        const filtradas = prev.filter(
+          (n) => !idsPedidosEntregados.has(n.pedidoId) && !idsActualizados.has(n.pedidoId)
+        );
+        return [...nuevasAlertas, ...filtradas].slice(0, 5);
+      });
+    }
+  }, [pedidosCocina]);
+
+  // Auto-descartar notificaciones informativas de "en_preparacion" después de 8 segundos
+  useEffect(() => {
+    const tieneEnPreparacion = notificacionesCocina.some((n) => n.estado === 'en_preparacion');
+    if (!tieneEnPreparacion) return;
+
+    const timer = setTimeout(() => {
+      const limite = Date.now() - 7500;
+      setNotificacionesCocina((prev) =>
+        prev.filter((n) => n.estado !== 'en_preparacion' || n.timestamp > limite)
+      );
+    }, 8000);
+
+    return () => clearTimeout(timer);
+  }, [notificacionesCocina]);
 
   const [nivelOroLiquido, setNivelOroLiquidoEstado] = useState<NivelOroLiquido>(() => {
     try {
@@ -2567,6 +2672,8 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       alternarItemCompletadoCocina,
       pasoTutorialDemo,
       setPasoTutorialDemo,
+      notificacionesCocina,
+      descartarNotificacionCocina,
     }),
     [
       mesas,
@@ -2615,6 +2722,8 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       alternarItemCompletadoCocina,
       pasoTutorialDemo,
       setPasoTutorialDemo,
+      notificacionesCocina,
+      descartarNotificacionCocina,
     ]
   );
 
