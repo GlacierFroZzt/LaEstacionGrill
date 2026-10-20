@@ -41,6 +41,7 @@ export interface FiltroLogs {
   nivel: NivelLog | 'TODOS';
   dispositivoId: string;
   rangoFecha: 'hoy' | '24h' | '7dias' | 'todos';
+  soloCatalogo?: boolean;
 }
 
 export interface DetallePresencia {

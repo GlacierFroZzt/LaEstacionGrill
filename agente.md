@@ -1502,3 +1502,22 @@
   6. **Verificación y Empaquetado:**
      - Compilación estricta y empaquetado de producción con Vite superados sin errores ni advertencias.
      - Sincronización automática de bundles web con las plataformas nativas de Android e iOS (`pnpm run sync:all`).
+
+
+## 29. Auditoría de Catálogo en Tiempo Real en la Terminal y Tutorial Visual e Interactivo (Dock Flotante sin Desenfoque)
+- **Requerimiento del Usuario:**
+  - *"Actualiza la terminal para que reciba tambie la info de estos cambios, ademas de que el tutorial no se alcanza a apreciar mucho, ya que aunque se aprecie el cambio de pantalla, el fondo esta borroso y lo tapa la ventana del tutorial, hay que ver la opcion de hacerlo interactivo pero visual. Despues sube los cambios"*.
+- **Decisiones Arquitectónicas y Solución Implementada:**
+  1. **Auditoría de Catálogo en la Terminal ([`RestauranteContext.tsx`](file:///d:/TaqueriaKm243/frontend/src/context/RestauranteContext.tsx) y [`visor-logs/src/App.tsx`](file:///d:/TaqueriaKm243/visor-logs/src/App.tsx)):**
+     - Al agregar, modificar o retirar platillos del menú, el POS emite eventos con prefijo `[CATÁLOGO]` y metadatos de auditoría (nombre, precio, categoría, fotografía, operador/mesero) mediante `servicioTelemetria.registrarInfo`.
+     - La terminal (`visor-logs`) reconoce estos eventos en tiempo real y les asigna un badge distintivo dorado `🍽️ MENÚ`.
+     - Se añadió un botón de filtro rápido `🍽️ Menú / Catálogo` en la barra de niveles para filtrar al instante solo los movimientos del menú.
+     - El modal de detalles de auditoría renderiza una ficha estructurada con los atributos del platillo afectado.
+  2. **Rediseño del Tutorial en Dock Flotante Interactivo ([`TourGuiadoFlotante.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/TourGuiadoFlotante.tsx) y [`datosTutorial.ts`](file:///d:/TaqueriaKm243/frontend/src/services/datosTutorial.ts)):**
+     - Se eliminó por completo el telón oscuro borroso (`backdrop-blur` y `bg-black/80`). La pantalla real permanece 100% nítida y visible con todos sus colores y semáforos.
+     - Se reubicó la ventana explicativa en un dock flotante compacto en el borde inferior (`bottom-4 left-1/2 -translate-x-1/2`), despejando el centro de la interfaz.
+     - Se implementó el modo **"Minimizar / Explorar Pantalla"**: permite colapsar la guía a una pastilla flotante animada en la esquina inferior para que el operador pruebe toques e interactúe libremente con el menú o las mesas sin perder su progreso en el tour.
+     - Se actualizó el contenido a 5 pasos integrando la nueva capacidad de gestión de platillos, fotos y opciones mediante pulsación prolongada.
+  3. **Verificación y Despliegue:**
+     - Compilaciones exitosas en `frontend` y `visor-logs` con `pnpm build`.
+     - Despliegue OTA a Supabase Storage v1.2.7 y sincronización multiplataforma.

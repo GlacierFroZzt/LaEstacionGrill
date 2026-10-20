@@ -1005,9 +1005,21 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return actualizados;
       });
 
+      // Auditoría en telemetría para monitoreo en vivo en la terminal
+      servicioTelemetria.registrarInfo(`[CATÁLOGO] Platillo agregado: ${nuevo.nombre}`, {
+        tipoEvento: 'producto_creado',
+        productoId: nuevo.id,
+        nombre: nuevo.nombre,
+        precio: nuevo.precio,
+        categoria: nuevo.categoria,
+        tieneFoto: Boolean(nuevo.imagenUrl),
+        requiereCocina: nuevo.requierePreparacion,
+        operador: meseroActual,
+      });
+
       return nuevo;
     },
-    []
+    [meseroActual]
   );
 
   /**
@@ -1036,8 +1048,19 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
         return actualizados;
       });
+
+      // Auditoría en telemetría para la terminal
+      servicioTelemetria.registrarInfo(`[CATÁLOGO] Platillo editado: ${datos.nombre.trim()}`, {
+        tipoEvento: 'producto_editado',
+        productoId: id,
+        nombre: datos.nombre.trim(),
+        precio: datos.precio,
+        categoria: datos.categoria,
+        tieneFoto: Boolean(datos.imagenUrl),
+        operador: meseroActual,
+      });
     },
-    []
+    [meseroActual]
   );
 
   /**
@@ -1045,14 +1068,30 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
    */
   const eliminarProducto = useCallback(
     async (id: string): Promise<void> => {
+      let nombreEliminado = '';
       setProductos((prev) => {
+        const objetivo = prev.find((p) => p.id === id);
+        if (objetivo) {
+          nombreEliminado = objetivo.nombre;
+        }
         const actualizados = prev.filter((p) => p.id !== id);
         RepositorioStorage.guardarProductos(actualizados);
         servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
         return actualizados;
       });
+
+      // Auditoría en telemetría para la terminal
+      servicioTelemetria.registrarInfo(
+        `[CATÁLOGO] Platillo retirado del menú: ${nombreEliminado || id}`,
+        {
+          tipoEvento: 'producto_eliminado',
+          productoId: id,
+          nombre: nombreEliminado,
+          operador: meseroActual,
+        }
+      );
     },
-    []
+    [meseroActual]
   );
 
   /**

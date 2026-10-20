@@ -27,6 +27,7 @@ import {
   Layers,
   Eye,
   Pencil,
+  UtensilsCrossed,
 } from 'lucide-react';
 import { servicioSupabaseLogs } from './servicioSupabaseLogs';
 import { servicioActualizacionesTerminal } from './servicioActualizacionesTerminal';
@@ -526,6 +527,11 @@ export const App: React.FC = () => {
     return logs.filter((log) => {
       // Filtro por nivel
       if (filtro.nivel !== 'TODOS' && log.nivel !== filtro.nivel) {
+        return false;
+      }
+
+      // Filtro específico para cambios de menú y catálogo
+      if (filtro.soloCatalogo && !log.mensaje.includes('[CATÁLOGO]')) {
         return false;
       }
 
@@ -1202,15 +1208,15 @@ export const App: React.FC = () => {
 
           {/* Pastillas de Nivel y Botones de Exportación */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-stone-800/80">
-            {/* Pastillas de Niveles */}
+            {/* Pastillas de Niveles y Filtro de Catálogo */}
             <div className="flex flex-wrap items-center gap-1.5">
               {(['TODOS', 'CRASH', 'ERROR', 'WARN', 'INFO'] as const).map((lvl) => {
-                const activo = filtro.nivel === lvl;
+                const activo = filtro.nivel === lvl && !filtro.soloCatalogo;
                 return (
                   <button
                     key={lvl}
                     type="button"
-                    onClick={() => setFiltro({ ...filtro, nivel: lvl })}
+                    onClick={() => setFiltro({ ...filtro, nivel: lvl, soloCatalogo: false })}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       activo
                         ? lvl === 'CRASH'
@@ -1229,6 +1235,21 @@ export const App: React.FC = () => {
                   </button>
                 );
               })}
+
+              {/* Filtro Rápido Especial para Cambios en Menú y Catálogo */}
+              <button
+                type="button"
+                onClick={() => setFiltro({ ...filtro, soloCatalogo: !filtro.soloCatalogo })}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black tracking-wider transition-all cursor-pointer flex items-center gap-1.5 border ${
+                  filtro.soloCatalogo
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 border-amber-400 shadow-md shadow-amber-950'
+                    : 'bg-stone-950 text-amber-400/90 hover:bg-stone-800 border-amber-500/30'
+                }`}
+                title="Filtrar únicamente altas, bajas, ediciones y fotos de platillos"
+              >
+                <UtensilsCrossed className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>🍽️ Menú / Catálogo</span>
+              </button>
             </div>
 
             {/* Acciones de Operación */}
@@ -1312,6 +1333,9 @@ export const App: React.FC = () => {
               const esCrash = item.nivel === 'CRASH';
               const esError = item.nivel === 'ERROR';
               const esWarn = item.nivel === 'WARN';
+              const esCatalogo =
+                item.mensaje.includes('[CATÁLOGO]') ||
+                Boolean(item.detalles?.tipoEvento?.toString().startsWith('producto_'));
 
               return (
                 <div
@@ -1322,6 +1346,8 @@ export const App: React.FC = () => {
                       ? 'bg-rose-950/25 hover:bg-rose-950/40 border-rose-800/80 shadow-xs'
                       : esError
                       ? 'bg-amber-950/20 hover:bg-amber-950/30 border-amber-700/60'
+                      : esCatalogo
+                      ? 'bg-stone-900/90 hover:bg-stone-850 border-amber-500/50 shadow-xs'
                       : esWarn
                       ? 'bg-stone-900/80 hover:bg-stone-900 border-amber-500/30'
                       : 'bg-stone-900/60 hover:bg-stone-900 border-stone-800/80'
@@ -1329,20 +1355,27 @@ export const App: React.FC = () => {
                 >
                   {/* Contenido Izquierdo */}
                   <div className="flex items-start gap-3 min-w-0">
-                    {/* Badge de Nivel */}
-                    <span
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 mt-0.5 ${
-                        esCrash
-                          ? 'bg-rose-600 text-white'
-                          : esError
-                          ? 'bg-amber-600 text-white'
-                          : esWarn
-                          ? 'bg-amber-400 text-stone-950'
-                          : 'bg-sky-500 text-white'
-                      }`}
-                    >
-                      {item.nivel}
-                    </span>
+                    {/* Badge Especial de Catálogo o Badge de Nivel */}
+                    {esCatalogo ? (
+                      <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 mt-0.5 bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 flex items-center gap-1 shadow-xs">
+                        <UtensilsCrossed className="w-3 h-3 stroke-[2.5]" />
+                        <span>MENÚ</span>
+                      </span>
+                    ) : (
+                      <span
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 mt-0.5 ${
+                          esCrash
+                            ? 'bg-rose-600 text-white'
+                            : esError
+                            ? 'bg-amber-600 text-white'
+                            : esWarn
+                            ? 'bg-amber-400 text-stone-950'
+                            : 'bg-sky-500 text-white'
+                        }`}
+                      >
+                        {item.nivel}
+                      </span>
+                    )}
 
                     {/* Mensaje y Metadatos */}
                     <div className="min-w-0 flex-1">
@@ -1449,6 +1482,45 @@ export const App: React.FC = () => {
                 </p>
                 <p className="text-stone-100 font-mono font-medium">{logSeleccionado.mensaje}</p>
               </div>
+
+              {/* Ficha Especial: Datos Estructurados de Catálogo y Menú */}
+              {(logSeleccionado.mensaje.includes('[CATÁLOGO]') ||
+                Boolean(logSeleccionado.detalles?.tipoEvento?.toString().startsWith('producto_'))) && (
+                <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-400 font-black text-xs uppercase tracking-wider">
+                    <UtensilsCrossed className="w-4 h-4" />
+                    <span>Auditoría de Platillo / Menú</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    {Boolean(logSeleccionado.detalles?.nombre) && (
+                      <div className="p-2 rounded-lg bg-stone-950/80 border border-amber-900/30">
+                        <span className="text-[10px] text-stone-400 block">Nombre</span>
+                        <span className="font-bold text-stone-100">{String(logSeleccionado.detalles.nombre)}</span>
+                      </div>
+                    )}
+                    {logSeleccionado.detalles?.precio !== undefined && (
+                      <div className="p-2 rounded-lg bg-stone-950/80 border border-amber-900/30">
+                        <span className="text-[10px] text-stone-400 block">Precio</span>
+                        <span className="font-bold text-amber-400">${String(logSeleccionado.detalles.precio)} MXN</span>
+                      </div>
+                    )}
+                    {Boolean(logSeleccionado.detalles?.categoria) && (
+                      <div className="p-2 rounded-lg bg-stone-950/80 border border-amber-900/30">
+                        <span className="text-[10px] text-stone-400 block">Categoría</span>
+                        <span className="font-bold text-stone-200 capitalize">{String(logSeleccionado.detalles.categoria)}</span>
+                      </div>
+                    )}
+                    {logSeleccionado.detalles?.tieneFoto !== undefined && (
+                      <div className="p-2 rounded-lg bg-stone-950/80 border border-amber-900/30">
+                        <span className="text-[10px] text-stone-400 block">Fotografía</span>
+                        <span className={`font-bold ${logSeleccionado.detalles.tieneFoto ? 'text-emerald-400' : 'text-stone-400'}`}>
+                          {logSeleccionado.detalles.tieneFoto ? '✓ Con Imagen' : 'Sin Imagen'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Ficha de Información de Origen */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">

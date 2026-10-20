@@ -1,7 +1,7 @@
 {
-  "version": "1.2.6",
+  "version": "1.2.7",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792435200000,
+  "timestamp": 1792438800000,
   "fecha": "20 de octubre de 2026",
-  "notas": "CRUD completo de productos (crear, editar, eliminar), subida y compresion de imagenes y menu contextual con pulsacion prolongada (long-press) o clic derecho."
+  "notas": "Auditoría en terminal para cambios de catálogo y nuevo tutorial interactivo con dock inferior flotante sin desenfoque de pantalla."
 }
