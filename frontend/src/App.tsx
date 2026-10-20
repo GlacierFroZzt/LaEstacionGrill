@@ -6,22 +6,24 @@ import { Comandero } from './components/Comandero';
 import { DetalleCuenta } from './components/DetalleCuenta';
 import { gestorNavegacion } from './utils/navegacionDispositivo';
 
-const ModalTicket = React.lazy(() =>
+import { lazyConReintento } from './utils/lazyConReintento';
+
+const ModalTicket = lazyConReintento(() =>
   import('./components/ModalTicket').then((m) => ({ default: m.ModalTicket }))
 );
-const PantallaCocina = React.lazy(() =>
+const PantallaCocina = lazyConReintento(() =>
   import('./components/PantallaCocina').then((m) => ({ default: m.PantallaCocina }))
 );
-const ModalCobro = React.lazy(() =>
+const ModalCobro = lazyConReintento(() =>
   import('./components/ModalCobro').then((m) => ({ default: m.ModalCobro }))
 );
-const CorteCajaModal = React.lazy(() =>
+const CorteCajaModal = lazyConReintento(() =>
   import('./components/CorteCajaModal').then((m) => ({ default: m.CorteCajaModal }))
 );
-const HistorialPedidosModal = React.lazy(() =>
+const HistorialPedidosModal = lazyConReintento(() =>
   import('./components/HistorialPedidosModal').then((m) => ({ default: m.HistorialPedidosModal }))
 );
-const ModalConfiguracionServidor = React.lazy(() =>
+const ModalConfiguracionServidor = lazyConReintento(() =>
   import('./components/ModalConfiguracionServidor').then((m) => ({ default: m.ModalConfiguracionServidor }))
 );
 

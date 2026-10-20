@@ -23,6 +23,26 @@ export class ErrorBoundary extends Component<PropsErrorBoundary, EstadoErrorBoun
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     console.error('[ErrorBoundary Global] Excepción no controlada en interfaz:', error, errorInfo);
+    
+    const mensaje = error.message || String(error);
+    const esErrorChunk =
+      mensaje.includes('Failed to fetch dynamically imported module') ||
+      mensaje.includes('Importing a module script failed') ||
+      mensaje.includes('error loading dynamically imported module');
+
+    if (esErrorChunk) {
+      const yaSeRecargo = sessionStorage.getItem('taqueria_recarga_error_boundary_v1');
+      if (!yaSeRecargo) {
+        sessionStorage.setItem('taqueria_recarga_error_boundary_v1', 'true');
+        servicioTelemetria.registrarAdvertencia(
+          'Desincronización de paquetes tras despliegue detectada. Recargando versión fresca...',
+          { error: mensaje, origen: 'ErrorBoundary' }
+        );
+        window.location.reload();
+        return;
+      }
+    }
+
     // Transmitir crash en segundo plano hacia Supabase y almacenamiento local
     servicioTelemetria.registrarCrash(error, {
       componentStack: errorInfo.componentStack,

@@ -1521,3 +1521,19 @@
   3. **Verificación y Despliegue:**
      - Compilaciones exitosas en `frontend` y `visor-logs` con `pnpm build`.
      - Despliegue OTA a Supabase Storage v1.2.7 y sincronización multiplataforma.
+
+
+## 30. Resiliencia ante Desincronización de Chunks Vite ('Failed to fetch dynamically imported module')
+- **Síntoma Detectado:**
+  - Al avanzar al paso 4 del tutorial o cambiar a la vista de cocina tras un despliegue reciente en Vercel/Web, el navegador arrojó:
+    `💥 CRASH FATAL: Failed to fetch dynamically imported module: https://laestaciongrill.vercel.app/assets/PantallaCocina-BLVOqAip.js`
+- **Causa Raíz:**
+  - La sesión del usuario mantenía cargado en memoria un `index.html` anterior con referencias a hashes de chunks antiguos (`BLVOqAip.js`). Al generarse un nuevo build en el servidor con nuevos nombres criptográficos, la petición dinámica diferida (`React.lazy`) recibió un 404.
+- **Corrección Arquitectónica Aplicada:**
+  1. **Wrapper Resiliente [`lazyConReintento.ts`](file:///d:/TaqueriaKm243/frontend/src/utils/lazyConReintento.ts):**
+     - Envoltorio de `React.lazy` con intercepción explícita de `Failed to fetch dynamically imported module`.
+     - Si detecta la desincronización, activa una recarga transparente del navegador mediante `window.location.reload()` utilizando una bandera en `sessionStorage` para evitar bucles.
+  2. **Auto-Recuperación en [`ErrorBoundary.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ErrorBoundary.tsx):**
+     - Si el error boundary intercepta un fallo de carga de chunk, emite advertencia de telemetría y recarga automáticamente la aplicación sin mostrar la pantalla de crash fatal.
+  3. **Control de Caché en [`vercel.json`](file:///d:/TaqueriaKm243/vercel.json):**
+     - Se configuró `Cache-Control: no-cache, no-store, must-revalidate` para `/index.html`, forzando al navegador a solicitar siempre el manifiesto fresco con los hashes actuales de los assets.
