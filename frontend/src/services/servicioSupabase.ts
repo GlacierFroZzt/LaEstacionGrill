@@ -430,7 +430,10 @@ class ServicioSupabase {
         const estabaDesconectado = !this.conectado;
         this.conectado = true;
         this.intentosReconexion = 0;
-        this.notificarListeners('ESTADO_CONEXION_ACTUALIZADO', { conectado: true });
+
+        if (estabaDesconectado) {
+          this.notificarListeners('ESTADO_CONEXION_ACTUALIZADO', { conectado: true });
+        }
 
         if (estabaDesconectado || forzarReiniciarCanal || !this.canal) {
           console.log('[ServicioSupabase] Servidor Supabase responde. Reanudando canal Realtime...');

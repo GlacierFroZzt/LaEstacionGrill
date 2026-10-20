@@ -578,8 +578,8 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
           for (const p of estadoRemoto.pedidosCocina) {
             if (esDelTurnoActual(p)) {
               const ultimaModLocal = ultimasModificacionesCocinaRef.current.get(p.id);
-              // Si el pedido fue editado localmente hace menos de 4 segundos, conservar la versión local
-              if (ultimaModLocal && Date.now() - ultimaModLocal < 4000) {
+              // Si el pedido fue editado localmente hace menos de 8 segundos, conservar la versión local
+              if (ultimaModLocal && Date.now() - ultimaModLocal < 8000) {
                 continue;
               }
               mapa.set(p.id, p);
@@ -791,9 +791,15 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         case 'PEDIDO_COCINA_ACTUALIZADO': {
           const datos = payload as { pedido?: PedidoCocina };
           if (datos.pedido) {
-            setPedidosCocina((prev) =>
-              prev.map((p) => (p.id === datos.pedido?.id ? (datos.pedido as PedidoCocina) : p))
-            );
+            const pedidoRecibido = datos.pedido;
+            setPedidosCocina((prev) => {
+              const ultimaModLocal = ultimasModificacionesCocinaRef.current.get(pedidoRecibido.id);
+              // Ignorar ecos si fue modificado localmente hace menos de 8 segundos
+              if (ultimaModLocal && Date.now() - ultimaModLocal < 8000) {
+                return prev;
+              }
+              return prev.map((p) => (p.id === pedidoRecibido.id ? pedidoRecibido : p));
+            });
           }
           break;
         }
@@ -1093,7 +1099,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setPedidosCocina((prev) => {
           const ultimaModLocal = ultimasModificacionesCocinaRef.current.get(pedidoAdaptado.id);
           // Proteger contra ecos rezagados si este dispositivo modificó el pedido recientemente
-          if (ultimaModLocal && Date.now() - ultimaModLocal < 2500) {
+          if (ultimaModLocal && Date.now() - ultimaModLocal < 8000) {
             return prev;
           }
           const existe = prev.some((it) => it.id === pedidoAdaptado.id);
@@ -1857,14 +1863,20 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
           pedido: pedidoActualizado,
         });
 
-        // Agrupar guardados rápidos (coalescing) para evitar condiciones de carrera en la red
         const timerPrevio = timersGuardadoCocinaRef.current.get(pedidoId);
         if (timerPrevio) clearTimeout(timerPrevio);
-        const nuevoTimer = setTimeout(() => {
+
+        // Si se marca como entregado, persistir de inmediato en Supabase sin temporizador
+        if (nuevoEstado === 'entregado') {
           timersGuardadoCocinaRef.current.delete(pedidoId);
-          servicioSupabase.guardarPedidoCocina(pedidoActualizado!).catch(console.error);
-        }, 220);
-        timersGuardadoCocinaRef.current.set(pedidoId, nuevoTimer);
+          servicioSupabase.guardarPedidoCocina(pedidoActualizado).catch(console.error);
+        } else {
+          const nuevoTimer = setTimeout(() => {
+            timersGuardadoCocinaRef.current.delete(pedidoId);
+            servicioSupabase.guardarPedidoCocina(pedidoActualizado!).catch(console.error);
+          }, 120);
+          timersGuardadoCocinaRef.current.set(pedidoId, nuevoTimer);
+        }
       }
     },
     []
@@ -1921,13 +1933,13 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
           pedido: pedidoActualizado,
         });
 
-        // Agrupar guardados rápidos (coalescing) para evitar condiciones de carrera en la red
         const timerPrevio = timersGuardadoCocinaRef.current.get(pedidoId);
         if (timerPrevio) clearTimeout(timerPrevio);
+
         const nuevoTimer = setTimeout(() => {
           timersGuardadoCocinaRef.current.delete(pedidoId);
           servicioSupabase.guardarPedidoCocina(pedidoActualizado!).catch(console.error);
-        }, 220);
+        }, 120);
         timersGuardadoCocinaRef.current.set(pedidoId, nuevoTimer);
       }
     },

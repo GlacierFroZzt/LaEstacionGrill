@@ -39,6 +39,14 @@
   - Cola offline local (`taqueria_cola_offline_v1`) que garantiza funcionamiento ininterrumpido ante pérdidas temporales de internet y sincronización bidireccional automática al recuperar la conectividad.
 
 ## 2. Errores Detectados y Correcciones Aplicadas
+- **Condición de Carrera en Cocina (Tarjetas Reaparecen y Platillos se Desmarcan):**
+  - *Causa:*
+    1. El temporizador de latido (heartbeat) de Supabase (`servicioSupabase.ts`) emitía `ESTADO_CONEXION_ACTUALIZADO` cada 8 segundos incluso estando ya conectado, lo cual provocaba que `RestauranteContext.tsx` ejecutara `sincronizarConServidorRemoto()` constantemente descargando el estado no actualizado del servidor.
+    2. Las acciones de cocina (`cambiarEstadoPedidoCocina` y `alternarItemCompletadoCocina`) utilizaban coalescing con temporizador y tenían una ventana de protección corta (`ultimasModificacionesCocinaRef`) de solo 2.5 a 4 segundos, permitiendo que ecos rezagados de Supabase Realtime o WebSocket sobreescribieran los cambios locales.
+  - *Corrección:*
+    1. En `servicioSupabase.ts`, solo notificar `ESTADO_CONEXION_ACTUALIZADO` si `estabaDesconectado === true`.
+    2. Al marcar un pedido como `'entregado'`, despachar inmediatamente a Supabase sin demoras de coalescing.
+    3. Extender la protección contra ecos en `ultimasModificacionesCocinaRef` a 8 segundos en sincronización remota, Realtime y WebSockets.
 - **TS6133 ('AlertCircle', 'Wifi', etc. no utilizados):**
   - *Causa:* Las directivas estrictas de TypeScript (`noUnusedLocals`) detectan identificadores no leídos.
   - *Corrección:* Edición quirúrgica eliminando importaciones residuales.

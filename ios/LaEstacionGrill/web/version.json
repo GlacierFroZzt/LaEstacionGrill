@@ -1,7 +1,7 @@
 {
-  "version": "1.3.1",
+  "version": "1.3.2",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792455000000,
+  "timestamp": 1792458000000,
   "fecha": "20 de octubre de 2026",
-  "notas": "Notificaciones de cocina integradas directamente en la tarjeta de cada mesa, con filtro exclusivo por mesero y badges de estado y entrega rápida."
+  "notas": "Corrección de estabilidad en cocina: persistencia inmediata de entregas, protección contra ecos de red y eliminación de re-sincronizaciones falsas del latido de Supabase."
 }
