@@ -37,6 +37,7 @@ import { servicioSeguridadPin, type EstadoSeguridadPin } from './services/servic
 import { PantallaBloqueoPin } from './components/PantallaBloqueoPin';
 import { TourGuiadoFlotante } from './components/TourGuiadoFlotante';
 import { ModalManualFunciones } from './components/ModalManualFunciones';
+import { PantallaEjemploTutorial } from './components/PantallaEjemploTutorial';
 
 const PantallaPrincipal: React.FC = () => {
   const {
@@ -58,6 +59,7 @@ const PantallaPrincipal: React.FC = () => {
   const [modalHistorialAbierto, setModalHistorialAbierto] = useState<boolean>(false);
   const [modalServidorAbierto, setModalServidorAbierto] = useState<boolean>(false);
   const [tourTutorialAbierto, setTourTutorialAbierto] = useState<boolean>(false);
+  const [pasoTourActual, setPasoTourActual] = useState<number>(0);
   const [manualFuncionesAbierto, setManualFuncionesAbierto] = useState<boolean>(false);
   const [pestanaMovil, setPestanaMovil] = useState<'menu' | 'cuenta'>('menu');
 
@@ -162,9 +164,11 @@ const PantallaPrincipal: React.FC = () => {
 
   const handleCerrarTour = useCallback((): void => {
     setTourTutorialAbierto(false);
+    setPasoTourActual(0);
   }, []);
 
   const handleIniciarTour = useCallback((): void => {
+    setPasoTourActual(1);
     setTourTutorialAbierto(true);
   }, []);
 
@@ -206,7 +210,10 @@ const PantallaPrincipal: React.FC = () => {
         )}
 
         <div className="relative z-10 flex-1 min-h-0 w-full flex flex-col overflow-hidden">
-          {vistaActual === 'cocina' ? (
+          {tourTutorialAbierto &&
+          (pasoTourActual === 2 || pasoTourActual === 3 || pasoTourActual === 5) ? (
+            <PantallaEjemploTutorial paso={pasoTourActual as 2 | 3 | 5} esClaro={esClaro} />
+          ) : vistaActual === 'cocina' ? (
             <React.Suspense fallback={null}>
               <PantallaCocina />
             </React.Suspense>
@@ -315,6 +322,7 @@ const PantallaPrincipal: React.FC = () => {
           alCerrar={handleCerrarTour}
           onCambiarVista={setVistaActual}
           vistaActual={vistaActual}
+          onPasoCambiado={setPasoTourActual}
         />
 
         <ModalManualFunciones

@@ -1537,3 +1537,19 @@
      - Si el error boundary intercepta un fallo de carga de chunk, emite advertencia de telemetría y recarga automáticamente la aplicación sin mostrar la pantalla de crash fatal.
   3. **Control de Caché en [`vercel.json`](file:///d:/TaqueriaKm243/vercel.json):**
      - Se configuró `Cache-Control: no-cache, no-store, must-revalidate` para `/index.html`, forzando al navegador a solicitar siempre el manifiesto fresco con los hashes actuales de los assets.
+
+
+## 31. Pantallas de Demostración Interactivas en Vivo para los Pasos 2, 3 y 5 del Tutorial
+- **Requerimiento del Usuario:**
+  - *"Agrega una pantalla de ejemplo de como se vería el paso 2, 3 y 5, aunque no sea de una mesa real"*.
+- **Decisiones Arquitectónicas y Solución Implementada:**
+  1. **Componente de Demostración Aislada ([`PantallaEjemploTutorial.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/PantallaEjemploTutorial.tsx)):**
+     - Permite que el usuario experimente visual e interactivamente el sistema sin alterar comandas, totales ni mesas reales.
+     - **Paso 2:** Comandero simulado en vivo con categorías, platillos, comanda activa con badges de cocina y botón interactivo *"Mandar a Cocina"*.
+     - **Paso 3:** Catálogo de productos con el botón destacado *"+ Nuevo Platillo"*, previsualizaciones fotográficas y la simulación del menú contextual desplegado (*Ver foto, Editar, Eliminar*).
+     - **Paso 5:** Pantalla de cobro simulada para una cuenta de $400 con métodos interactivos (Efectivo, Tarjeta, Transferencia, Mixto), calculadora de cambio con billetes rápidos y división de cuenta por persona.
+  2. **Coordinación Reactiva con el Tour ([`TourGuiadoFlotante.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/TourGuiadoFlotante.tsx) y [`App.tsx`](file:///d:/TaqueriaKm243/frontend/src/App.tsx)):**
+     - Al avanzar a los pasos 2, 3 o 5, `TourGuiadoFlotante` emite `onPasoCambiado(pasoActual.numero)`.
+     - `App.tsx` conmuta de forma reactiva el fondo hacia `PantallaEjemploTutorial` con un banner explicativo superior, y restaura las mesas reales al finalizar el tour o en el paso 1.
+  3. **Verificación y Despliegue:**
+     - Compilación estricta y despliegue OTA v1.2.8 en Supabase y sincronización a GitHub/Vercel.

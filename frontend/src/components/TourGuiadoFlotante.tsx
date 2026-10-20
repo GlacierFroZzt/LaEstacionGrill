@@ -22,6 +22,7 @@ interface PropsTourGuiadoFlotante {
   alCerrar: () => void;
   onCambiarVista: (vista: 'mesas' | 'cocina') => void;
   vistaActual: 'mesas' | 'cocina';
+  onPasoCambiado?: (numeroPaso: number) => void;
 }
 
 export const TourGuiadoFlotante: React.FC<PropsTourGuiadoFlotante> = ({
@@ -29,6 +30,7 @@ export const TourGuiadoFlotante: React.FC<PropsTourGuiadoFlotante> = ({
   alCerrar,
   onCambiarVista,
   vistaActual,
+  onPasoCambiado,
 }) => {
   const [indicePaso, setIndicePaso] = useState<number>(0);
   const [vistaInicial, setVistaInicial] = useState<'mesas' | 'cocina'>('mesas');
@@ -73,12 +75,22 @@ export const TourGuiadoFlotante: React.FC<PropsTourGuiadoFlotante> = ({
     }
   }, [activo, vistaRequerida, vistaActual]);
 
+  // Notificar al componente superior qué paso está activo para activar pantallas de demo
+  useEffect(() => {
+    if (activo && onPasoCambiado) {
+      onPasoCambiado(pasoActual.numero);
+    }
+  }, [activo, pasoActual.numero, onPasoCambiado]);
+
   const manejarFinalizar = useCallback(() => {
+    if (onPasoCambiado) {
+      onPasoCambiado(0);
+    }
     if (vistaInicial !== vistaActual) {
       onCambiarVistaRef.current(vistaInicial);
     }
     alCerrarRef.current();
-  }, [vistaInicial, vistaActual]);
+  }, [vistaInicial, vistaActual, onPasoCambiado]);
 
   const manejarSiguiente = useCallback(() => {
     if (esUltimoPaso) {

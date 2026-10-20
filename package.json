@@ -1,6 +1,6 @@
 {
   "name": "la-estacion-grill-sistema",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "private": true,
   "description": "Sistema de Punto de Venta, KDS y Comandas para La Estación Grill",
   "scripts": {

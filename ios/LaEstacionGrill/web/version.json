@@ -1,7 +1,7 @@
 {
-  "version": "1.2.7",
+  "version": "1.2.8",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792438800000,
+  "timestamp": 1792442400000,
   "fecha": "20 de octubre de 2026",
-  "notas": "Auditoría en terminal para cambios de catálogo y nuevo tutorial interactivo con dock inferior flotante sin desenfoque de pantalla."
+  "notas": "Pantallas de ejemplo interactivas para los pasos 2, 3 y 5 del tutorial guiado sin alterar mesas reales."
 }
