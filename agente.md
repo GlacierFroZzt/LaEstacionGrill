@@ -1409,3 +1409,38 @@
      - Botón *"Ficha SAT"* en cada tarjeta de factura para copiar sus datos al instante.
      - Opción de vincular UUID del SAT directamente sobre las facturas pendientes.
   5. **Verificación:** Compilación con TypeScript estricto y Vite superada sin incidencias (pnpm build).
+
+
+## 26. Gestión Avanzada de Mesas: Renombrado Dinámico y Traslado a Mesas Libres
+- **Requerimiento del Usuario:**
+  - *"Haz que se pueda cambiar el nombre de la mesa o mover la mesa a otra que ya esté libre"*.
+- **Decisiones Arquitectónicas y Flujo de Datos:**
+  1. **Flexibilización del Modelo de Dominio ([`types/index.ts`](file:///d:/TaqueriaKm243/frontend/src/types/index.ts)):**
+     - Modificadas las propiedades de `Mesa` (`nombre`), `Cuenta` (`mesaId`, `numeroMesa`, `nombreMesa`) y `PedidoCocina` (`mesaId`, `nombreMesa`) para permitir mutación controlada sin perder tipado estricto.
+  2. **Operación de Renombrado (`cambiarNombreMesa` en [`RestauranteContext.tsx`](file:///d:/TaqueriaKm243/frontend/src/context/RestauranteContext.tsx)):**
+     - Validación contra nombres vacíos y detección preventiva de colisiones con nombres existentes para evitar confusiones operativas entre meseros y cocineros.
+     - Actualización atómica en el listado de mesas saneadas (`deduplicarYSanearMesas`).
+     - Propagación automática del nuevo nombre en la cuenta activa vinculada (`cuentasActivas`) y en las comandas de cocina activas (`pedidosCocina`).
+     - Persistencia en `RepositorioStorage`, emisión del evento WebSocket/BroadcastChannel `MESA_ACTUALIZADA` y sincronización con PostgreSQL en Supabase.
+  3. **Operación de Traslado de Mesa (`moverMesa` en [`RestauranteContext.tsx`](file:///d:/TaqueriaKm243/frontend/src/context/RestauranteContext.tsx)):**
+     - Verificación rigurosa de precondiciones: la mesa de origen debe tener comanda activa (`ocupada` o `por_cobrar`) y la mesa de destino debe encontrarse estrictamente `libre`.
+     - Reasignación de la cuenta activa al identificador, número y nombre de la mesa de destino.
+     - Liberación de la mesa de origen (`estado: 'libre'`, `cuentaActivaId: null`, `horaApertura: null`, `totalParcial: 0`) y ocupación de la mesa de destino con el consumo acumulado y el mesero asignado.
+     - Actualización de los pedidos de cocina activos (`pedidosCocina`) para que el equipo de cocina y meseros despachen a la nueva ubicación física del comensal.
+     - Transición transparente de la selección activa en el POS (`mesaSeleccionadaId`).
+     - Sincronización completa con Supabase (`liberarMesaRemota`, `guardarMesas`, `guardarCuentas`, `guardarPedidoCocina`) y evento en tiempo real `MESA_ACTUALIZADA`.
+  4. **Componentes Modales Accesibles y Táctiles:**
+     - [`ModalRenombrarMesa.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalRenombrarMesa.tsx): Diálogo rápido con autofocus, validación en tiempo real y soporte para tecla Enter/Esc y botón físico de retroceso (`gestorNavegacion.empujarPaso`).
+     - [`ModalMoverMesa.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalMoverMesa.tsx): Tarjeta de resumen de la orden origen, selector visual de mesas desocupadas por zona (Comedor / A Domicilio) y botón de confirmación con estado disabled reactivo.
+  5. **Integración en la Experiencia de Usuario:**
+     - **En [`DetalleCuenta.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/DetalleCuenta.tsx):**
+       - Icono de lápiz junto al título de la mesa para renombrar al vuelo.
+       - Botón "Mover" en la cabecera superior.
+       - Botón "Mover" en la botonera de acciones rápidas (Ticket, Mover, Cancelar).
+     - **En [`DashboardMesas.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/DashboardMesas.tsx):**
+       - Icono de lápiz para renombrar tanto mesas libres como ocupadas con 1 toque.
+       - Botón "Mover" en cada tarjeta de mesa ocupada o por cobrar para transferirla sin entrar al comandero.
+       - En "Modo Gestión": botones de renombrado dedicados en todas las tarjetas junto a los botones de eliminación o liberación.
+  6. **Verificación y Compilación:**
+     - Compilación exitosa en `frontend` con `pnpm --prefix frontend build` (`tsc -b && vite build`) en 1.06s.
+     - Compilación exitosa en `visor-logs` con `pnpm --prefix visor-logs build` en 1.15s.

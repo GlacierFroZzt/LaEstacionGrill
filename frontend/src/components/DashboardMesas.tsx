@@ -13,12 +13,16 @@ import {
   Check,
   RotateCcw,
   Sparkles,
+  Pencil,
+  ArrowRightLeft,
 } from 'lucide-react';
 import type { Mesa, TipoArea } from '../types';
 import { useRestaurante } from '../context/RestauranteContext';
 import { formatearMoneda, formatearTiempoTranscurrido } from '../utils/formateadores';
 import { BotonOroLiquido } from './BotonOroLiquido';
 import { gestorNavegacion } from '../utils/navegacionDispositivo';
+import { ModalRenombrarMesa } from './ModalRenombrarMesa';
+import { ModalMoverMesa } from './ModalMoverMesa';
 
 type FiltroZona = TipoArea | 'todas';
 
@@ -46,6 +50,8 @@ export const DashboardMesas: React.FC = () => {
   const [modoEdicion, setModoEdicion] = useState<boolean>(false);
   const [mensajeFeedback, setMensajeFeedback] = useState<MensajeFeedback | null>(null);
   const [mesaParaAbrir, setMesaParaAbrir] = useState<Mesa | null>(null);
+  const [mesaParaRenombrar, setMesaParaRenombrar] = useState<Mesa | null>(null);
+  const [mesaParaMover, setMesaParaMover] = useState<Mesa | null>(null);
 
   const esClaro = tema === 'claro';
 
@@ -382,27 +388,51 @@ export const DashboardMesas: React.FC = () => {
                     modoEdicion ? 'border-dashed border-amber-500/60' : tarjetaLibreClase
                   }`}
                 >
-                  {/* Botón de eliminar en Modo Gestión */}
+                  {/* Botones de acción en Modo Gestión */}
                   {modoEdicion && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleEliminarElemento(e, mesa)}
-                      className="absolute -top-2 -right-2 p-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-lg z-20 cursor-pointer"
-                      title={`Eliminar ${mesa.nombre}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="absolute -top-2 -right-2 flex items-center gap-1 z-20">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMesaParaRenombrar(mesa);
+                        }}
+                        className="p-1.5 rounded-full bg-amber-500 text-stone-950 hover:bg-amber-400 shadow-lg cursor-pointer"
+                        title={`Renombrar ${mesa.nombre}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleEliminarElemento(e, mesa)}
+                        className="p-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-lg cursor-pointer"
+                        title={`Eliminar ${mesa.nombre}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   )}
 
                   {/* Cabecera */}
                   <div className="flex items-center justify-between gap-1.5 min-w-0">
-                    <span className="font-extrabold text-base sm:text-lg group-hover:text-amber-500 transition-colors flex items-center gap-2 min-w-0">
+                    <span className="font-extrabold text-base sm:text-lg group-hover:text-amber-500 transition-colors flex items-center gap-1.5 min-w-0">
                       {esDomicilio ? (
                         <Bike className="w-4 h-4 text-cyan-500 shrink-0" />
                       ) : (
                         <Users className="w-4 h-4 text-amber-500 shrink-0" />
                       )}
                       <span className="truncate">{mesa.nombre}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMesaParaRenombrar(mesa);
+                        }}
+                        className="p-1 rounded-md text-stone-400 hover:text-amber-400 hover:bg-stone-500/10 transition-colors cursor-pointer shrink-0"
+                        title={`Cambiar nombre de ${mesa.nombre}`}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
                     </span>
                     <span
                       className={`w-2.5 h-2.5 rounded-full shrink-0 ${
@@ -470,28 +500,52 @@ export const DashboardMesas: React.FC = () => {
                     esClaro ? 'text-stone-900' : 'text-stone-100'
                   }`}
                 >
-                {/* Botón de liberar mesa en Modo Gestión */}
+                {/* Botones de acción en Modo Gestión */}
                 {modoEdicion && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleLiberarMesaForzada(e, mesa)}
-                    className="absolute -top-2 -right-2 px-2.5 py-1 rounded-full bg-red-600 hover:bg-red-700 text-white font-black text-[11px] shadow-lg z-20 cursor-pointer flex items-center gap-1 active:scale-95 border border-white/20"
-                    title={`Liberar y cancelar orden de ${mesa.nombre}`}
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Liberar</span>
-                  </button>
+                  <div className="absolute -top-2 -right-2 flex items-center gap-1 z-20">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMesaParaRenombrar(mesa);
+                      }}
+                      className="p-1.5 rounded-full bg-amber-500 text-stone-950 hover:bg-amber-400 shadow-lg cursor-pointer"
+                      title={`Renombrar ${mesa.nombre}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleLiberarMesaForzada(e, mesa)}
+                      className="px-2.5 py-1 rounded-full bg-red-600 hover:bg-red-700 text-white font-black text-[11px] shadow-lg cursor-pointer flex items-center gap-1 active:scale-95 border border-white/20"
+                      title={`Liberar y cancelar orden de ${mesa.nombre}`}
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Liberar</span>
+                    </button>
+                  </div>
                 )}
 
                 {/* Cabecera con Nombre y Tiempo */}
                 <div className="flex items-center justify-between gap-1.5 min-w-0">
-                  <span className="font-black text-base sm:text-lg flex items-center gap-2 min-w-0">
+                  <span className="font-black text-base sm:text-lg flex items-center gap-1.5 min-w-0">
                     {esDomicilio ? (
                       <Bike className="w-4 h-4 text-cyan-500 shrink-0" />
                     ) : (
                       <Users className="w-4 h-4 text-amber-400 shrink-0" />
                     )}
                     <span className="truncate">{mesa.nombre}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMesaParaRenombrar(mesa);
+                      }}
+                      className="p-1 rounded-md text-stone-400 hover:text-amber-400 hover:bg-stone-800/40 transition-colors cursor-pointer shrink-0"
+                      title={`Cambiar nombre de ${mesa.nombre}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                   </span>
 
                   <span
@@ -532,6 +586,23 @@ export const DashboardMesas: React.FC = () => {
                   >
                     Comanda
                   </BotonOroLiquido>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMesaParaMover(mesa);
+                    }}
+                    className={`py-1.5 px-2.5 rounded-lg font-bold text-xs flex items-center gap-1 active:scale-95 transition-all cursor-pointer border ${
+                      esClaro
+                        ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+                        : 'bg-blue-950/40 hover:bg-blue-900/50 text-blue-300 border-blue-800/60'
+                    }`}
+                    title={`Mover comanda de ${mesa.nombre} a otra mesa libre`}
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span>Mover</span>
+                  </button>
 
                   {esOcupada && (
                     <button
@@ -651,6 +722,21 @@ export const DashboardMesas: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modales de Cambio de Nombre y Mover Mesa */}
+      <ModalRenombrarMesa
+        mesa={mesaParaRenombrar}
+        isOpen={Boolean(mesaParaRenombrar)}
+        onClose={() => setMesaParaRenombrar(null)}
+        onExito={(nuevo) => mostrarMensaje(`Se actualizó el nombre a "${nuevo}".`, 'exito')}
+      />
+
+      <ModalMoverMesa
+        mesaOrigen={mesaParaMover}
+        isOpen={Boolean(mesaParaMover)}
+        onClose={() => setMesaParaMover(null)}
+        onExito={(destino) => mostrarMensaje(`Se movió la orden a "${destino.nombre}".`, 'exito')}
+      />
     </div>
   );
 };

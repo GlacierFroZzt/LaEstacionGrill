@@ -120,6 +120,8 @@ interface RestauranteContextType {
     divisionCuenta?: DivisionCuentaInfo
   ) => { exito: boolean; cambio: number; cuentaCerrada?: Cuenta };
   liberarMesaManual: (mesaId: string) => void;
+  cambiarNombreMesa: (mesaId: string, nuevoNombre: string) => { exito: boolean; mensaje: string };
+  moverMesa: (mesaOrigenId: string, mesaDestinoId: string) => { exito: boolean; mensaje: string };
   agregarMesa: (capacidad?: number) => Mesa;
   eliminarMesa: (mesaId?: string) => { exito: boolean; mensaje: string };
   agregarDomicilio: () => Mesa;
@@ -1787,6 +1789,225 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
     [mesas, cuentasActivas, mesaSeleccionadaId]
   );
 
+  const cambiarNombreMesa = useCallback(
+    (mesaId: string, nuevoNombre: string): { exito: boolean; mensaje: string } => {
+      const nombreLimpio = nuevoNombre.trim();
+      if (!nombreLimpio) {
+        return { exito: false, mensaje: 'El nombre de la mesa no puede estar vacío.' };
+      }
+
+      const mesaExistente = mesas.find((m) => m.id === mesaId);
+      if (!mesaExistente) {
+        return { exito: false, mensaje: 'No se encontró la mesa especificada.' };
+      }
+
+      if (mesaExistente.nombre.trim() === nombreLimpio) {
+        return { exito: true, mensaje: 'El nombre no presenta cambios.' };
+      }
+
+      // Validar que no exista otra mesa con el mismo nombre para evitar confusiones operativas
+      const nombreDuplicado = mesas.some(
+        (m) => m.id !== mesaId && m.nombre.trim().toLowerCase() === nombreLimpio.toLowerCase()
+      );
+      if (nombreDuplicado) {
+        return {
+          exito: false,
+          mensaje: `Ya existe otra mesa o pedido con el nombre "${nombreLimpio}". Elige uno diferente.`,
+        };
+      }
+
+      // 1. Actualizar mesas
+      const nuevasMesas = mesas.map((m) =>
+        m.id === mesaId ? { ...m, nombre: nombreLimpio } : m
+      );
+      const saneadas = deduplicarYSanearMesas(nuevasMesas);
+      setMesas(saneadas);
+      RepositorioStorage.guardarMesas(saneadas);
+
+      // 2. Si la mesa tiene comanda activa, actualizar el nombre en la cuenta
+      let nuevasCuentas = cuentasActivas;
+      if (mesaExistente.cuentaActivaId && cuentasActivas[mesaExistente.cuentaActivaId]) {
+        const cuentaActual = cuentasActivas[mesaExistente.cuentaActivaId];
+        nuevasCuentas = {
+          ...cuentasActivas,
+          [mesaExistente.cuentaActivaId]: {
+            ...cuentaActual,
+            nombreMesa: nombreLimpio,
+          },
+        };
+        setCuentasActivas(nuevasCuentas);
+        RepositorioStorage.guardarCuentasActivas(nuevasCuentas);
+        servicioSupabase.guardarCuentas(nuevasCuentas).catch((err: unknown) => {
+          console.error('[RestauranteContext] Error al actualizar cuenta remota tras renombrar:', err);
+        });
+      }
+
+      // 3. Si hay pedidos de cocina de esta mesa, actualizar nombreMesa
+      setPedidosCocina((prev) => {
+        const actualizados = prev.map((p) =>
+          p.mesaId === mesaId ? { ...p, nombreMesa: nombreLimpio } : p
+        );
+        RepositorioStorage.guardarPedidosCocina(actualizados);
+        actualizados
+          .filter((p) => p.mesaId === mesaId && p.estado !== 'entregado')
+          .forEach((p) => {
+            servicioSupabase.guardarPedidoCocina(p).catch((err: unknown) => {
+              console.error('[RestauranteContext] Error al actualizar pedido cocina remoto tras renombrar:', err);
+            });
+          });
+        return actualizados;
+      });
+
+      // 4. Emitir sincronización en tiempo real
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: saneadas,
+        cuentasActivas: nuevasCuentas,
+      });
+
+      // 5. Guardar en Supabase
+      servicioSupabase.guardarMesas(saneadas).catch((err: unknown) => {
+        console.error('[RestauranteContext] Error al guardar mesas remotas tras renombrar:', err);
+      });
+
+      return {
+        exito: true,
+        mensaje: `Nombre actualizado a "${nombreLimpio}" exitosamente.`,
+      };
+    },
+    [mesas, cuentasActivas]
+  );
+
+  const moverMesa = useCallback(
+    (mesaOrigenId: string, mesaDestinoId: string): { exito: boolean; mensaje: string } => {
+      if (mesaOrigenId === mesaDestinoId) {
+        return { exito: false, mensaje: 'La mesa origen y destino no pueden ser la misma.' };
+      }
+
+      const mesaOrigen = mesas.find((m) => m.id === mesaOrigenId);
+      if (!mesaOrigen) {
+        return { exito: false, mensaje: 'No se encontró la mesa de origen.' };
+      }
+
+      if (mesaOrigen.estado === 'libre' || !mesaOrigen.cuentaActivaId) {
+        return { exito: false, mensaje: `"${mesaOrigen.nombre}" se encuentra libre y no tiene comanda para mover.` };
+      }
+
+      const mesaDestino = mesas.find((m) => m.id === mesaDestinoId);
+      if (!mesaDestino) {
+        return { exito: false, mensaje: 'No se encontró la mesa de destino.' };
+      }
+
+      if (mesaDestino.estado !== 'libre' || mesaDestino.cuentaActivaId) {
+        return {
+          exito: false,
+          mensaje: `La mesa "${mesaDestino.nombre}" no está libre (está ${mesaDestino.estado}). Selecciona una mesa libre.`,
+        };
+      }
+
+      const idCuenta = mesaOrigen.cuentaActivaId;
+      const cuentaActual = cuentasActivas[idCuenta];
+      if (!cuentaActual) {
+        return { exito: false, mensaje: 'No se localizó la comanda activa de la mesa de origen.' };
+      }
+
+      // 1. Actualizar la cuenta para asociarla a la nueva mesa
+      const cuentaActualizada: Cuenta = {
+        ...cuentaActual,
+        mesaId: mesaDestino.id,
+        numeroMesa: mesaDestino.numero,
+        nombreMesa: mesaDestino.nombre,
+      };
+
+      const nuevasCuentas: Record<string, Cuenta> = {
+        ...cuentasActivas,
+        [idCuenta]: cuentaActualizada,
+      };
+      setCuentasActivas(nuevasCuentas);
+      RepositorioStorage.guardarCuentasActivas(nuevasCuentas);
+
+      // 2. Actualizar estado de las mesas
+      const nuevasMesas = mesas.map((m) => {
+        if (m.id === mesaOrigen.id) {
+          return {
+            ...m,
+            estado: 'libre' as EstadoMesa,
+            cuentaActivaId: null,
+            horaApertura: null,
+            totalParcial: 0,
+            meseroAsignado: undefined,
+          };
+        }
+        if (m.id === mesaDestino.id) {
+          return {
+            ...m,
+            estado: mesaOrigen.estado,
+            cuentaActivaId: idCuenta,
+            horaApertura: mesaOrigen.horaApertura,
+            totalParcial: mesaOrigen.totalParcial,
+            meseroAsignado: mesaOrigen.meseroAsignado,
+          };
+        }
+        return m;
+      });
+
+      const saneadas = deduplicarYSanearMesas(nuevasMesas);
+      setMesas(saneadas);
+      RepositorioStorage.guardarMesas(saneadas);
+
+      // 3. Actualizar pedidos de cocina para que reflejen la nueva mesa
+      const pedidosModificados: PedidoCocina[] = [];
+      setPedidosCocina((prev) => {
+        const actualizados = prev.map((p) => {
+          if (p.mesaId === mesaOrigen.id || p.comandaId === idCuenta) {
+            const modificado: PedidoCocina = {
+              ...p,
+              mesaId: mesaDestino.id,
+              nombreMesa: mesaDestino.nombre,
+            };
+            pedidosModificados.push(modificado);
+            return modificado;
+          }
+          return p;
+        });
+        RepositorioStorage.guardarPedidosCocina(actualizados);
+        return actualizados;
+      });
+
+      // 4. Si la mesa de origen estaba seleccionada, cambiar la selección a la mesa de destino
+      if (mesaSeleccionadaId === mesaOrigen.id) {
+        setMesaSeleccionadaId(mesaDestino.id);
+      }
+
+      // 5. Emitir sincronización en tiempo real
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: saneadas,
+        cuentasActivas: nuevasCuentas,
+      });
+
+      // 6. Sincronizar en Supabase
+      servicioSupabase.liberarMesaRemota(mesaOrigen.id, mesaOrigen.numero).catch((err: unknown) => {
+        console.error('[RestauranteContext] Error al liberar mesa remota origen tras mover:', err);
+      });
+      servicioSupabase.guardarMesas(saneadas).catch((err: unknown) => {
+        console.error('[RestauranteContext] Error al guardar mesas remotas tras mover:', err);
+      });
+      servicioSupabase.guardarCuentas(nuevasCuentas).catch((err: unknown) => {
+        console.error('[RestauranteContext] Error al guardar cuentas remotas tras mover:', err);
+      });
+      for (const ped of pedidosModificados) {
+        servicioSupabase.guardarPedidoCocina(ped).catch((err: unknown) => {
+          console.error('[RestauranteContext] Error al actualizar pedido cocina remoto tras mover:', err);
+        });
+      }
+
+      return {
+        exito: true,
+        mensaje: `Comanda movida exitosamente de "${mesaOrigen.nombre}" a "${mesaDestino.nombre}".`,
+      };
+    },
+    [mesas, cuentasActivas, mesaSeleccionadaId]
+  );
+
   const imprimirTicket = useCallback(
     (tipo: 'cocina' | 'cliente', cuentaEspecifica?: Cuenta): void => {
       const cuentaAImprimir = cuentaEspecifica ?? cuentaActiva;
@@ -1888,6 +2109,8 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       solicitarCuenta,
       cerrarYCobrarCuenta,
       liberarMesaManual,
+      cambiarNombreMesa,
+      moverMesa,
       agregarMesa,
       eliminarMesa,
       agregarDomicilio,
@@ -1927,6 +2150,8 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       solicitarCuenta,
       cerrarYCobrarCuenta,
       liberarMesaManual,
+      cambiarNombreMesa,
+      moverMesa,
       agregarMesa,
       eliminarMesa,
       agregarDomicilio,

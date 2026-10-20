@@ -1,7 +1,7 @@
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792345000000,
+  "timestamp": 1792348800000,
   "fecha": "19 de octubre de 2026",
-  "notas": "Asistente de facturacion CFDI 4.0 con copiado rapido de 1-clic y enlace directo al portal oficial del SAT sin PAC."
+  "notas": "Renombrado dinamico de mesas y traslado de comandas activas a mesas libres."
 }

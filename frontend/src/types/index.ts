@@ -65,7 +65,7 @@ export interface ItemComanda {
 export interface Mesa {
   readonly id: string;
   readonly numero: number;
-  readonly nombre: string;
+  nombre: string;
   readonly area: TipoArea;
   readonly capacidad: number;
   estado: EstadoMesa;
@@ -77,9 +77,9 @@ export interface Mesa {
 
 export interface Cuenta {
   readonly id: string;
-  readonly mesaId: string;
-  readonly numeroMesa: number;
-  readonly nombreMesa: string;
+  mesaId: string;
+  numeroMesa: number;
+  nombreMesa: string;
   readonly items: ItemComanda[];
   subtotal: number;
   descuento: number;
@@ -146,8 +146,8 @@ export interface ItemPedidoCocina {
 export interface PedidoCocina {
   readonly id: string;
   readonly comandaId: string;
-  readonly mesaId: string;
-  readonly nombreMesa: string;
+  mesaId: string;
+  nombreMesa: string;
   readonly mesero: string;
   readonly horaEnvio: string; // ISO string
   items: ItemPedidoCocina[];
