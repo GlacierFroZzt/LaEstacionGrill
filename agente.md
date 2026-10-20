@@ -1553,3 +1553,21 @@
      - `App.tsx` conmuta de forma reactiva el fondo hacia `PantallaEjemploTutorial` con un banner explicativo superior, y restaura las mesas reales al finalizar el tour o en el paso 1.
   3. **Verificación y Despliegue:**
      - Compilación estricta y despliegue OTA v1.2.8 en Supabase y sincronización a GitHub/Vercel.
+
+
+## 32. Unificación del Tutorial sobre las Pantallas 100% Reales mediante Sandbox en Memoria (`RestauranteContext.tsx`)
+- **Requerimiento del Usuario:**
+  - *"Que sean exactamente las mismas pantallas con el mismo formato, colores y distribucion"*.
+- **Decisiones Arquitectónicas y Solución Implementada:**
+  1. **Eliminación de Pantallas Mock Duplicadas:**
+     - Se eliminó por completo `PantallaEjemploTutorial.tsx` para evitar discrepancias visuales, de formato, shaders de oro líquido o distribución responsiva.
+     - Durante todo el tutorial se montan **exactamente los mismos componentes reales de producción**: [`Comandero.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/Comandero.tsx), [`DetalleCuenta.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/DetalleCuenta.tsx), [`ModalOpcionesProducto.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalOpcionesProducto.tsx), [`PantallaCocina.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/PantallaCocina.tsx) y [`ModalCobro.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/ModalCobro.tsx).
+  2. **Sandbox en Memoria Aislado en [`RestauranteContext.tsx`](file:///d:/TaqueriaKm243/frontend/src/context/RestauranteContext.tsx):**
+     - Se agregaron `pasoTutorialDemo` y `setPasoTutorialDemo` junto con los estados volátiles `cuentaDemoTutorial` (`id: 'cuenta-demo-tutorial'`) y `pedidoCocinaDemo` (`id: 'pedido-cocina-demo-tutorial'`) asociados a `MESA_DEMO_TUTORIAL_ID` (`'mesa-demo-tutorial'`).
+     - En los pasos **2, 3 y 5**, los selectores `mesaSeleccionada` y `cuentaActiva` retornan la mesa y cuenta de ejemplo en memoria para que `<Comandero />`, `<DetalleCuenta />` y `<ModalCobro />` se rendericen con su formato real completo sin afectar las mesas reales.
+     - En el **Paso 3**, [`Comandero.tsx`](file:///d:/TaqueriaKm243/frontend/src/components/Comandero.tsx) abre automáticamente el verdadero `<ModalOpcionesProducto />` con el primer producto del menú real.
+     - En el **Paso 4**, si no hay pedidos activos en cocina, `pedidosCocina` expone `pedidoCocinaDemo` para que `<PantallaCocina />` muestre una tarjeta real en parrilla.
+     - En el **Paso 5**, [`App.tsx`](file:///d:/TaqueriaKm243/frontend/src/App.tsx) abre automáticamente el verdadero `<ModalCobro />` sobre la vista real del comandero y cuenta.
+     - Todas las mutaciones sobre `'mesa-demo-tutorial'` o `'pedido-cocina-demo-tutorial'` modifican únicamente el estado en memoria sin persistir en `RepositorioStorage`, `servicioSupabase` ni emitir por `servicioSincronizacion`.
+  3. **Verificación y Despliegue:**
+     - Compilación estricta (`tsc -b && vite build`) exitosa y despliegue OTA v1.2.9.

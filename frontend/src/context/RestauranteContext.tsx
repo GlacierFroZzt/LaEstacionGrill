@@ -142,7 +142,98 @@ interface RestauranteContextType {
   ) => { enviadosCount: number; exito: boolean; mensaje: string };
   cambiarEstadoPedidoCocina: (pedidoId: string, nuevoEstado: EstadoPedidoCocina) => void;
   alternarItemCompletadoCocina: (pedidoId: string, itemId: string) => void;
+  pasoTutorialDemo: number;
+  setPasoTutorialDemo: (paso: number) => void;
 }
+
+const MESA_DEMO_TUTORIAL_ID = 'mesa-demo-tutorial';
+const CUENTA_DEMO_TUTORIAL_ID = 'cuenta-demo-tutorial';
+const PEDIDO_COCINA_DEMO_ID = 'pedido-cocina-demo-tutorial';
+
+const crearCuentaDemoInicial = (mesero: string): Cuenta => ({
+  id: CUENTA_DEMO_TUTORIAL_ID,
+  mesaId: MESA_DEMO_TUTORIAL_ID,
+  numeroMesa: 4,
+  nombreMesa: 'Mesa 4 · Salón (Ejemplo)',
+  items: [
+    {
+      id: 'item-demo-tut-1',
+      productoId: 'taco-trompo',
+      nombre: 'Orden Tacos de Trompo (5 pzas)',
+      precioUnitario: 95,
+      categoria: 'tacos',
+      requierePreparacion: true,
+      cantidad: 2,
+      cantidadEnviadaCocina: 2,
+      notas: 'Bien dorados',
+      modificadoresSeleccionados: ['Con todo', 'Con piña'],
+      fechaAgregado: new Date().toISOString(),
+    },
+    {
+      id: 'item-demo-tut-2',
+      productoId: 'gringa-trompo',
+      nombre: 'Gringa de Trompo',
+      precioUnitario: 65,
+      categoria: 'tacos',
+      requierePreparacion: true,
+      cantidad: 2,
+      cantidadEnviadaCocina: 0,
+      notas: '',
+      modificadoresSeleccionados: ['Con todo', 'Queso extra'],
+      fechaAgregado: new Date().toISOString(),
+    },
+    {
+      id: 'item-demo-tut-3',
+      productoId: 'coca-600',
+      nombre: 'Coca-Cola 600ml',
+      precioUnitario: 40,
+      categoria: 'bebidas',
+      requierePreparacion: false,
+      cantidad: 2,
+      cantidadEnviadaCocina: 2,
+      notas: 'Bien frías',
+      modificadoresSeleccionados: [],
+      fechaAgregado: new Date().toISOString(),
+    },
+  ],
+  subtotal: 400,
+  descuento: 0,
+  propina: 0,
+  total: 400,
+  estado: 'abierta',
+  horaApertura: new Date(Date.now() - 12 * 60000).toISOString(),
+  horaCierre: null,
+  mesero,
+});
+
+const crearPedidoCocinaDemoInicial = (mesero: string): PedidoCocina => ({
+  id: PEDIDO_COCINA_DEMO_ID,
+  comandaId: CUENTA_DEMO_TUTORIAL_ID,
+  mesaId: MESA_DEMO_TUTORIAL_ID,
+  nombreMesa: 'Mesa 4 · Salón (Ejemplo)',
+  mesero,
+  horaEnvio: new Date(Date.now() - 4 * 60000).toISOString(),
+  estado: 'en_preparacion',
+  numeroRonda: 1,
+  items: [
+    {
+      id: 'kds-demo-item-1',
+      nombre: 'Orden Tacos de Trompo (5 pzas)',
+      cantidad: 2,
+      notas: 'Bien dorados',
+      modificadores: ['Con todo', 'Con piña'],
+      completado: true,
+    },
+    {
+      id: 'kds-demo-item-2',
+      nombre: 'Gringa de Trompo',
+      cantidad: 2,
+      notas: '',
+      modificadores: ['Con todo', 'Queso extra'],
+      completado: false,
+    },
+  ],
+});
 
 const RestauranteContext = createContext<RestauranteContextType | undefined>(undefined);
 
@@ -178,6 +269,27 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
   } | null>(null);
   const [meseroActual, setMeseroActual] = useState<string>('Beto (Mesero)');
   const [tema, setTema] = useState<TemaVisual>(() => RepositorioStorage.obtenerTema());
+
+  // Estados en memoria para el Sandbox interactivo del tutorial (no afectan mesas ni cuentas reales)
+  const [pasoTutorialDemo, setPasoTutorialDemoEstado] = useState<number>(0);
+  const [cuentaDemoTutorial, setCuentaDemoTutorial] = useState<Cuenta>(() =>
+    crearCuentaDemoInicial('Beto (Mesero)')
+  );
+  const [pedidoCocinaDemo, setPedidoCocinaDemo] = useState<PedidoCocina>(() =>
+    crearPedidoCocinaDemoInicial('Beto (Mesero)')
+  );
+
+  const setPasoTutorialDemo = useCallback(
+    (paso: number): void => {
+      setPasoTutorialDemoEstado(paso);
+      if (paso === 1) {
+        // Reiniciar datos de ejemplo al iniciar el recorrido
+        setCuentaDemoTutorial(crearCuentaDemoInicial(meseroActual));
+        setPedidoCocinaDemo(crearPedidoCocinaDemoInicial(meseroActual));
+      }
+    },
+    [meseroActual]
+  );
 
   // Control de modificaciones recientes en cocina para evitar que ecos de Realtime o el latido
   // reviertan clics rápidos del cocinero (protección de condiciones de carrera)
@@ -883,17 +995,56 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, []);
 
+  const esPasoComanderoTutorial =
+    pasoTutorialDemo === 2 || pasoTutorialDemo === 3 || pasoTutorialDemo === 5;
+
   const mesaSeleccionada = useMemo<Mesa | null>(() => {
+    if (esPasoComanderoTutorial) {
+      return {
+        id: MESA_DEMO_TUTORIAL_ID,
+        numero: 4,
+        nombre: 'Mesa 4 · Salón (Ejemplo)',
+        area: 'mesa',
+        capacidad: 4,
+        estado: pasoTutorialDemo === 5 ? 'por_cobrar' : 'ocupada',
+        cuentaActivaId: CUENTA_DEMO_TUTORIAL_ID,
+        horaApertura: cuentaDemoTutorial.horaApertura,
+        totalParcial: cuentaDemoTutorial.subtotal,
+        meseroAsignado: cuentaDemoTutorial.mesero,
+      };
+    }
     if (!mesaSeleccionadaId) return null;
     return mesas.find((m) => m.id === mesaSeleccionadaId) ?? null;
-  }, [mesas, mesaSeleccionadaId]);
+  }, [
+    esPasoComanderoTutorial,
+    pasoTutorialDemo,
+    cuentaDemoTutorial.horaApertura,
+    cuentaDemoTutorial.subtotal,
+    cuentaDemoTutorial.mesero,
+    mesas,
+    mesaSeleccionadaId,
+  ]);
 
   const cuentaActiva = useMemo<Cuenta | null>(() => {
+    if (esPasoComanderoTutorial || mesaSeleccionada?.id === MESA_DEMO_TUTORIAL_ID) {
+      return cuentaDemoTutorial;
+    }
     if (!mesaSeleccionada || !mesaSeleccionada.cuentaActivaId) return null;
     return cuentasActivas[mesaSeleccionada.cuentaActivaId] ?? null;
-  }, [mesaSeleccionada, cuentasActivas]);
+  }, [esPasoComanderoTutorial, mesaSeleccionada, cuentaDemoTutorial, cuentasActivas]);
+
+  const pedidosCocinaExpuestos = useMemo<PedidoCocina[]>(() => {
+    if (pasoTutorialDemo === 4) {
+      const activosReales = pedidosCocina.filter((p) => p.estado !== 'entregado');
+      if (activosReales.length === 0) {
+        return [pedidoCocinaDemo, ...pedidosCocina];
+      }
+    }
+    return pedidosCocina;
+  }, [pasoTutorialDemo, pedidosCocina, pedidoCocinaDemo]);
 
   const seleccionarMesa = useCallback((mesa: Mesa | null): void => {
+    if (mesa?.id === MESA_DEMO_TUTORIAL_ID) return;
     setMesaSeleccionadaId(mesa ? mesa.id : null);
   }, []);
 
@@ -1111,6 +1262,36 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       notas: string,
       modificadores: string[]
     ): void => {
+      if (mesaId === MESA_DEMO_TUTORIAL_ID) {
+        const nuevoItemDemo: ItemComanda = {
+          id: `item-demo-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          productoId: producto.id,
+          nombre: producto.nombre,
+          precioUnitario: producto.precio,
+          categoria: producto.categoria,
+          requierePreparacion: producto.requierePreparacion,
+          cantidad: Math.max(1, cantidad),
+          cantidadEnviadaCocina: 0,
+          notas: notas.trim(),
+          modificadoresSeleccionados: [...modificadores],
+          fechaAgregado: new Date().toISOString(),
+        };
+        setCuentaDemoTutorial((prev) => {
+          const nuevosItems = [...prev.items, nuevoItemDemo];
+          const nuevoSubtotal = nuevosItems.reduce(
+            (acc, it) => acc + it.precioUnitario * it.cantidad,
+            0
+          );
+          return {
+            ...prev,
+            items: nuevosItems,
+            subtotal: nuevoSubtotal,
+            total: nuevoSubtotal + prev.propina - prev.descuento,
+          };
+        });
+        return;
+      }
+
       const targetMesa = mesas.find((m) => m.id === mesaId);
       if (!targetMesa) return;
 
@@ -1207,6 +1388,37 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const modificarCantidadItem = useCallback(
     (mesaId: string, itemId: string, delta: number): void => {
+      if (mesaId === MESA_DEMO_TUTORIAL_ID) {
+        setCuentaDemoTutorial((prev) => {
+          const nuevosItems = prev.items
+            .map((it) => {
+              if (it.id === itemId) {
+                const nuevaCantidad = it.cantidad + delta;
+                return nuevaCantidad > 0
+                  ? {
+                      ...it,
+                      cantidad: nuevaCantidad,
+                      cantidadEnviadaCocina: Math.min(nuevaCantidad, it.cantidadEnviadaCocina ?? 0),
+                    }
+                  : null;
+              }
+              return it;
+            })
+            .filter((it): it is ItemComanda => it !== null);
+          const nuevoSubtotal = nuevosItems.reduce(
+            (acc, it) => acc + it.precioUnitario * it.cantidad,
+            0
+          );
+          return {
+            ...prev,
+            items: nuevosItems,
+            subtotal: nuevoSubtotal,
+            total: nuevoSubtotal + prev.propina - prev.descuento,
+          };
+        });
+        return;
+      }
+
       const mesa = mesas.find((m) => m.id === mesaId);
       if (!mesa || !mesa.cuentaActivaId) return;
 
@@ -1265,6 +1477,23 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const eliminarItemComanda = useCallback(
     (mesaId: string, itemId: string): void => {
+      if (mesaId === MESA_DEMO_TUTORIAL_ID) {
+        setCuentaDemoTutorial((prev) => {
+          const nuevosItems = prev.items.filter((it) => it.id !== itemId);
+          const nuevoSubtotal = nuevosItems.reduce(
+            (acc, it) => acc + it.precioUnitario * it.cantidad,
+            0
+          );
+          return {
+            ...prev,
+            items: nuevosItems,
+            subtotal: nuevoSubtotal,
+            total: nuevoSubtotal + prev.propina - prev.descuento,
+          };
+        });
+        return;
+      }
+
       const mesa = mesas.find((m) => m.id === mesaId);
       if (!mesa || !mesa.cuentaActivaId) return;
 
@@ -1308,6 +1537,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const solicitarCuenta = useCallback(
     (mesaId: string): void => {
+      if (mesaId === MESA_DEMO_TUTORIAL_ID) return;
       let mesaModificada: Mesa | null = null;
       const nuevasMesas = mesas.map((m) => {
         if (m.id === mesaId) {
@@ -1342,6 +1572,19 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       mesaId: string,
       forzarReenvioCompleto = false
     ): { enviadosCount: number; exito: boolean; mensaje: string } => {
+      if (mesaId === MESA_DEMO_TUTORIAL_ID) {
+        setCuentaDemoTutorial((prev) => ({
+          ...prev,
+          items: prev.items.map((it) => ({ ...it, cantidadEnviadaCocina: it.cantidad })),
+        }));
+        reproducirCampanaCocina();
+        return {
+          enviadosCount: 2,
+          exito: true,
+          mensaje: 'Comanda de ejemplo enviada a la pantalla de cocina.',
+        };
+      }
+
       const mesa = mesas.find((m) => m.id === mesaId);
       if (!mesa || !mesa.cuentaActivaId) {
         return { enviadosCount: 0, exito: false, mensaje: 'No hay mesa o cuenta activa.' };
@@ -1473,6 +1716,11 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
    */
   const cambiarEstadoPedidoCocina = useCallback(
     (pedidoId: string, nuevoEstado: EstadoPedidoCocina): void => {
+      if (pedidoId === PEDIDO_COCINA_DEMO_ID) {
+        setPedidoCocinaDemo((prev) => ({ ...prev, estado: nuevoEstado }));
+        return;
+      }
+
       let pedidoActualizado: PedidoCocina | null = null;
       setPedidosCocina((prev) => {
         const actualizados = prev.map((p) => {
@@ -1510,6 +1758,25 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
    */
   const alternarItemCompletadoCocina = useCallback(
     (pedidoId: string, itemId: string): void => {
+      if (pedidoId === PEDIDO_COCINA_DEMO_ID) {
+        setPedidoCocinaDemo((prev) => {
+          const nuevosItems = prev.items.map((it) =>
+            it.id === itemId ? { ...it, completado: !it.completado } : it
+          );
+          const todosCompletos = nuevosItems.every((it) => it.completado);
+          return {
+            ...prev,
+            items: nuevosItems,
+            estado: todosCompletos
+              ? 'listo'
+              : prev.estado === 'pendiente'
+              ? 'en_preparacion'
+              : prev.estado,
+          };
+        });
+        return;
+      }
+
       let pedidoActualizado: PedidoCocina | null = null;
       setPedidosCocina((prev) => {
         const actualizados = prev.map((p) => {
@@ -1559,6 +1826,26 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       desgloseMixto?: DesglosePagoMixto,
       divisionCuenta?: DivisionCuentaInfo
     ): { exito: boolean; cambio: number; cuentaCerrada?: Cuenta } => {
+      if (mesaId === MESA_DEMO_TUTORIAL_ID) {
+        const totalFinalDemo =
+          cuentaDemoTutorial.subtotal + propina - cuentaDemoTutorial.descuento;
+        const recibidoDemo = montoRecibido ?? totalFinalDemo;
+        const cambioDemo = recibidoDemo > totalFinalDemo ? recibidoDemo - totalFinalDemo : 0;
+        const cuentaCerradaDemo: Cuenta = {
+          ...cuentaDemoTutorial,
+          propina,
+          total: totalFinalDemo,
+          estado: 'cerrada',
+          horaCierre: new Date().toISOString(),
+          metodoPago,
+          montoRecibido: recibidoDemo,
+          cambioEntregado: cambioDemo,
+          desgloseMixto,
+          divisionCuenta,
+        };
+        return { exito: true, cambio: cambioDemo, cuentaCerrada: cuentaCerradaDemo };
+      }
+
       const mesa = mesas.find((m) => m.id === mesaId);
       if (!mesa || !mesa.cuentaActivaId) {
         return { exito: false, cambio: 0 };
@@ -1692,11 +1979,15 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       return { exito: true, cambio, cuentaCerrada };
     },
-    [mesas, cuentasActivas, corteActual]
+    [mesas, cuentasActivas, corteActual, cuentaDemoTutorial]
   );
 
   const liberarMesaManual = useCallback(
     (mesaId: string): void => {
+      if (mesaId === MESA_DEMO_TUTORIAL_ID) {
+        setCuentaDemoTutorial(crearCuentaDemoInicial(meseroActual));
+        return;
+      }
       const mesa = mesas.find(
         (m) =>
           m.id === mesaId ||
@@ -1771,7 +2062,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
       servicioSupabase.guardarMesas(saneadas).catch(console.error);
     },
-    [mesas, cuentasActivas, mesaSeleccionadaId]
+    [mesas, cuentasActivas, mesaSeleccionadaId, meseroActual]
   );
 
   const agregarMesa = useCallback(
@@ -2234,7 +2525,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       corteActual,
       cuentasCerradas,
       historialTurnos,
-      pedidosCocina,
+      pedidosCocina: pedidosCocinaExpuestos,
       productos,
       vistaActual,
       estaEnLinea,
@@ -2274,6 +2565,8 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       enviarComandaACocina,
       cambiarEstadoPedidoCocina,
       alternarItemCompletadoCocina,
+      pasoTutorialDemo,
+      setPasoTutorialDemo,
     }),
     [
       mesas,
@@ -2282,7 +2575,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       corteActual,
       cuentasCerradas,
       historialTurnos,
-      pedidosCocina,
+      pedidosCocinaExpuestos,
       productos,
       vistaActual,
       estaEnLinea,
@@ -2320,6 +2613,8 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       enviarComandaACocina,
       cambiarEstadoPedidoCocina,
       alternarItemCompletadoCocina,
+      pasoTutorialDemo,
+      setPasoTutorialDemo,
     ]
   );
 

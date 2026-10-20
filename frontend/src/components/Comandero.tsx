@@ -1,4 +1,4 @@
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, useEffect, memo } from 'react';
 import {
   Flame,
   Utensils,
@@ -156,6 +156,7 @@ export const Comandero: React.FC<ComanderoProps> = ({ onVerCuentaMovil }) => {
     agregarProducto,
     editarProducto,
     eliminarProducto,
+    pasoTutorialDemo,
   } = useRestaurante();
 
   const [categoriaActiva, setCategoriaActiva] = useState<CategoriaProducto>('tacos');
@@ -178,6 +179,16 @@ export const Comandero: React.FC<ComanderoProps> = ({ onVerCuentaMovil }) => {
 
   const [productoAEliminar, setProductoAEliminar] = useState<Producto | null>(null);
   const [modalEliminarAbierto, setModalEliminarAbierto] = useState<boolean>(false);
+
+  // Abrir automáticamente el menú contextual real de opciones del platillo en el Paso 3 del tutorial
+  useEffect(() => {
+    if (pasoTutorialDemo === 3 && productos.length > 0) {
+      setProductoSeleccionadoOpciones(productos[0]);
+      setModalOpcionesAbierto(true);
+    } else if (pasoTutorialDemo !== 3) {
+      setModalOpcionesAbierto(false);
+    }
+  }, [pasoTutorialDemo, productos]);
 
   const esClaro = tema === 'claro';
 

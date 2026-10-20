@@ -37,7 +37,6 @@ import { servicioSeguridadPin, type EstadoSeguridadPin } from './services/servic
 import { PantallaBloqueoPin } from './components/PantallaBloqueoPin';
 import { TourGuiadoFlotante } from './components/TourGuiadoFlotante';
 import { ModalManualFunciones } from './components/ModalManualFunciones';
-import { PantallaEjemploTutorial } from './components/PantallaEjemploTutorial';
 
 const PantallaPrincipal: React.FC = () => {
   const {
@@ -53,22 +52,32 @@ const PantallaPrincipal: React.FC = () => {
     cerrarTicketImpresion,
     nivelOroLiquido,
     parametrosOro,
+    pasoTutorialDemo,
+    setPasoTutorialDemo,
   } = useRestaurante();
   const [modalCobroAbierto, setModalCobroAbierto] = useState<boolean>(false);
   const [modalCorteAbierto, setModalCorteAbierto] = useState<boolean>(false);
   const [modalHistorialAbierto, setModalHistorialAbierto] = useState<boolean>(false);
   const [modalServidorAbierto, setModalServidorAbierto] = useState<boolean>(false);
   const [tourTutorialAbierto, setTourTutorialAbierto] = useState<boolean>(false);
-  const [pasoTourActual, setPasoTourActual] = useState<number>(0);
   const [manualFuncionesAbierto, setManualFuncionesAbierto] = useState<boolean>(false);
   const [pestanaMovil, setPestanaMovil] = useState<'menu' | 'cuenta'>('menu');
 
+  // Abrir automáticamente el ModalCobro real durante el Paso 5 del tutorial y cerrarlo al cambiar de paso
+  useEffect(() => {
+    if (tourTutorialAbierto && pasoTutorialDemo === 5) {
+      setModalCobroAbierto(true);
+    } else if (tourTutorialAbierto && pasoTutorialDemo !== 5) {
+      setModalCobroAbierto(false);
+    }
+  }, [tourTutorialAbierto, pasoTutorialDemo]);
+
   // Navegación con botones del celular/tablet para modales
   useEffect(() => {
-    if (modalCobroAbierto) {
+    if (modalCobroAbierto && !tourTutorialAbierto) {
       return gestorNavegacion.empujarPaso('modal-cobro', () => setModalCobroAbierto(false));
     }
-  }, [modalCobroAbierto]);
+  }, [modalCobroAbierto, tourTutorialAbierto]);
 
   useEffect(() => {
     if (modalCorteAbierto) {
@@ -96,7 +105,7 @@ const PantallaPrincipal: React.FC = () => {
 
   // Navegación con botones del celular/tablet entre comanda y dashboard
   useEffect(() => {
-    if (mesaSeleccionada?.id) {
+    if (mesaSeleccionada?.id && mesaSeleccionada.id !== 'mesa-demo-tutorial') {
       return gestorNavegacion.empujarPaso('mesa-activa', () => {
         seleccionarMesa(null);
         setPestanaMovil('menu');
@@ -164,13 +173,14 @@ const PantallaPrincipal: React.FC = () => {
 
   const handleCerrarTour = useCallback((): void => {
     setTourTutorialAbierto(false);
-    setPasoTourActual(0);
-  }, []);
+    setPasoTutorialDemo(0);
+    setModalCobroAbierto(false);
+  }, [setPasoTutorialDemo]);
 
   const handleIniciarTour = useCallback((): void => {
-    setPasoTourActual(1);
+    setPasoTutorialDemo(1);
     setTourTutorialAbierto(true);
-  }, []);
+  }, [setPasoTutorialDemo]);
 
   return (
     <div
@@ -188,7 +198,7 @@ const PantallaPrincipal: React.FC = () => {
         onAbrirHistorialPedidos={() => setModalHistorialAbierto(true)}
         onAbrirConfiguracionServidor={() => setModalServidorAbierto(true)}
         onIrAlInicio={handleIrAlInicioCompleto}
-        onIniciarTourTutorial={() => setTourTutorialAbierto(true)}
+        onIniciarTourTutorial={handleIniciarTour}
         onAbrirManualFunciones={() => setManualFuncionesAbierto(true)}
       />
 
@@ -210,10 +220,7 @@ const PantallaPrincipal: React.FC = () => {
         )}
 
         <div className="relative z-10 flex-1 min-h-0 w-full flex flex-col overflow-hidden">
-          {tourTutorialAbierto &&
-          (pasoTourActual === 2 || pasoTourActual === 3 || pasoTourActual === 5) ? (
-            <PantallaEjemploTutorial paso={pasoTourActual as 2 | 3 | 5} esClaro={esClaro} />
-          ) : vistaActual === 'cocina' ? (
+          {vistaActual === 'cocina' ? (
             <React.Suspense fallback={null}>
               <PantallaCocina />
             </React.Suspense>
@@ -322,7 +329,7 @@ const PantallaPrincipal: React.FC = () => {
           alCerrar={handleCerrarTour}
           onCambiarVista={setVistaActual}
           vistaActual={vistaActual}
-          onPasoCambiado={setPasoTourActual}
+          onPasoCambiado={setPasoTutorialDemo}
         />
 
         <ModalManualFunciones

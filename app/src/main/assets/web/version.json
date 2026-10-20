@@ -1,7 +1,7 @@
 {
-  "version": "1.2.8",
+  "version": "1.2.9",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792442400000,
+  "timestamp": 1792446000000,
   "fecha": "20 de octubre de 2026",
-  "notas": "Pantallas de ejemplo interactivas para los pasos 2, 3 y 5 del tutorial guiado sin alterar mesas reales."
+  "notas": "Tutorial con pantallas 100% reales (Comandero, DetalleCuenta, ModalOpcionesProducto, PantallaCocina y ModalCobro) usando Sandbox en memoria."
 }
