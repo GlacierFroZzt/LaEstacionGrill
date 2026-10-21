@@ -39,6 +39,16 @@
   - Cola offline local (`taqueria_cola_offline_v1`) que garantiza funcionamiento ininterrumpido ante pérdidas temporales de internet y sincronización bidireccional automática al recuperar la conectividad.
 
 ## 2. Errores Detectados y Correcciones Aplicadas
+- **Bloqueo y Falta de Detección en Actualizaciones OTA (v1.3.4):**
+  - *Causa:*
+    1. Al hacer el commit anterior con los cambios del Comandero, solo se subió a Git sin ejecutar el pipeline de compilación de assets, empaquetado de `web-bundle.zip` y subida a Supabase Storage con `version.json` incrementado.
+    2. En el dispositivo, la versión local (`1.3.3`) era igual a la versión remota existente en Supabase (`1.3.3`). Cuando el usuario abría el modal y presionaba *"Comprobar Actualizaciones"*, el modal ejecutaba `aplicarActualizacion()` directamente. Al no haber versión superior (`!resultado.hayActualizacion`), la función retornaba de inmediato sin recargar la pantalla, dejando la bandera `actualizando = true` y el modal "pensando" indefinidamente con el spinner activo.
+  - *Corrección:*
+    1. Se incrementó la versión a **`1.3.4`** en `package.json`, `frontend/package.json` y `version.json`.
+    2. En [ModalActualizacionOta.tsx](file:///d:/TaqueriaKm243/frontend/src/components/ModalActualizacionOta.tsx), si el usuario presiona el botón cuando la app ya está al día, ahora re-verifica el servidor de inmediato y desactiva el estado de carga (`setActualizando(false)`) sin quedarse colgado.
+    3. Se recompilaron los bundles de producción para Android e iOS (`sync:all`), se generó `web-bundle.zip` y se subieron exitosamente a Supabase Storage (`actualizaciones/version.json` y `actualizaciones/web-bundle.zip`).
+    4. Cambios sincronizados y subidos a `origin main`.
+
 - **Acceso a Opciones del Platillo (Botón de 3 Puntos vs Gestos Prolongados):**
   - *Contexto:* Previamente, para editar, eliminar o ver foto de un platillo se requería mantener presionado (500 ms) o hacer clic derecho, lo cual causaba fricción táctil o confusiones en pantallas táctiles y ratón al comandar.
   - *Corrección:* Se reemplazó la lógica de gestos por un botón dedicado con el icono de 3 puntos (`MoreVertical`) en la esquina superior derecha de la tarjeta (`TarjetaProductoItem` en `Comandero.tsx`). Al pulsarlo con `stopPropagation`, abre instantáneamente el modal de opciones sin activar la orden del platillo, y al tocar el resto de la tarjeta se agrega o selecciona el platillo directamente.
