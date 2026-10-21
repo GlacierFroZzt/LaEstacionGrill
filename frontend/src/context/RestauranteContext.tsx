@@ -141,6 +141,7 @@ interface RestauranteContextType {
   ) => { exito: boolean; cambio: number; cuentaCerrada?: Cuenta };
   liberarMesaManual: (mesaId: string) => void;
   cambiarNombreMesa: (mesaId: string, nuevoNombre: string) => { exito: boolean; mensaje: string };
+  cambiarCapacidadMesa: (mesaId: string, nuevaCapacidad: number) => { exito: boolean; mensaje: string };
   moverMesa: (mesaOrigenId: string, mesaDestinoId: string) => { exito: boolean; mensaje: string };
   agregarMesa: (capacidad?: number) => Mesa;
   eliminarMesa: (mesaId?: string) => { exito: boolean; mensaje: string };
@@ -2482,6 +2483,51 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
     [mesas, cuentasActivas]
   );
 
+  const cambiarCapacidadMesa = useCallback(
+    (mesaId: string, nuevaCapacidad: number): { exito: boolean; mensaje: string } => {
+      const capacidadNum = Math.round(Number(nuevaCapacidad));
+      if (isNaN(capacidadNum) || capacidadNum < 1 || capacidadNum > 50) {
+        return {
+          exito: false,
+          mensaje: 'El número de personas debe ser entre 1 y 50.',
+        };
+      }
+
+      const mesaExistente = mesas.find((m) => m.id === mesaId);
+      if (!mesaExistente) {
+        return { exito: false, mensaje: 'No se encontró la mesa especificada.' };
+      }
+
+      if (mesaExistente.capacidad === capacidadNum) {
+        return { exito: true, mensaje: 'La capacidad no presenta cambios.' };
+      }
+
+      const nuevasMesas = mesas.map((m) =>
+        m.id === mesaId ? { ...m, capacidad: capacidadNum } : m
+      );
+      const saneadas = deduplicarYSanearMesas(nuevasMesas);
+      setMesas(saneadas);
+      RepositorioStorage.guardarMesas(saneadas);
+
+      // Emitir evento en tiempo real a todas las tablets y celulares
+      servicioSincronizacion.emitir('MESA_ACTUALIZADA', {
+        mesas: saneadas,
+        cuentasActivas,
+      });
+
+      // Guardar en Supabase
+      servicioSupabase.guardarMesas(saneadas).catch((err: unknown) => {
+        console.error('[RestauranteContext] Error al actualizar capacidad en Supabase:', err);
+      });
+
+      return {
+        exito: true,
+        mensaje: `Capacidad ajustada a ${capacidadNum} personas.`,
+      };
+    },
+    [mesas, cuentasActivas]
+  );
+
   const moverMesa = useCallback(
     (mesaOrigenId: string, mesaDestinoId: string): { exito: boolean; mensaje: string } => {
       if (mesaOrigenId === mesaDestinoId) {
@@ -2720,6 +2766,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       cerrarYCobrarCuenta,
       liberarMesaManual,
       cambiarNombreMesa,
+      cambiarCapacidadMesa,
       moverMesa,
       agregarMesa,
       eliminarMesa,
@@ -2770,6 +2817,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       cerrarYCobrarCuenta,
       liberarMesaManual,
       cambiarNombreMesa,
+      cambiarCapacidadMesa,
       moverMesa,
       agregarMesa,
       eliminarMesa,

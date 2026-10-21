@@ -121,10 +121,24 @@ export const DetalleCuenta: React.FC<DetalleCuentaProps> = ({
                 type="button"
                 onClick={() => setModalRenombrarAbierto(true)}
                 className="p-1 rounded-lg text-stone-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer shrink-0"
-                title="Cambiar nombre de la mesa"
+                title="Configurar nombre o personas en la mesa"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
+              {mesaSeleccionada.area !== 'domicilio' && (
+                <button
+                  type="button"
+                  onClick={() => setModalRenombrarAbierto(true)}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border transition-all cursor-pointer active:scale-95 ${
+                    esClaro
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                      : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/30'
+                  }`}
+                  title="Toca para cambiar el número de personas en la mesa"
+                >
+                  <span>👥 {mesaSeleccionada.capacidad} pers.</span>
+                </button>
+              )}
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border ${
                   esClaro

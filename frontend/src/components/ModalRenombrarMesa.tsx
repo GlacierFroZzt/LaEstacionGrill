@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Pencil, X, Check, AlertCircle } from 'lucide-react';
+import { Pencil, X, Check, AlertCircle, Users, Plus, Minus } from 'lucide-react';
 import type { Mesa } from '../types';
 import { useRestaurante } from '../context/RestauranteContext';
 import { BotonOroLiquido } from './BotonOroLiquido';
@@ -18,16 +18,19 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
   onClose,
   onExito,
 }) => {
-  const { cambiarNombreMesa, tema } = useRestaurante();
+  const { cambiarNombreMesa, cambiarCapacidadMesa, tema } = useRestaurante();
   const [nuevoNombre, setNuevoNombre] = useState<string>('');
+  const [capacidad, setCapacidad] = useState<number>(4);
   const [errorValidacion, setErrorValidacion] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const esClaro = tema === 'claro';
+  const esDomicilio = mesa?.area === 'domicilio';
 
   useEffect(() => {
     if (isOpen && mesa) {
       setNuevoNombre(mesa.nombre);
+      setCapacidad(mesa.capacidad || 4);
       setErrorValidacion(null);
       // Auto-enfoque al abrir
       setTimeout(() => {
@@ -75,10 +78,19 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
       return;
     }
 
-    const resultado = cambiarNombreMesa(mesa.id, nombreLimpio);
-    if (!resultado.exito) {
-      setErrorValidacion(resultado.mensaje);
+    const resultadoNombre = cambiarNombreMesa(mesa.id, nombreLimpio);
+    if (!resultadoNombre.exito) {
+      setErrorValidacion(resultadoNombre.mensaje);
       return;
+    }
+
+    // Actualizar capacidad si no es entrega a domicilio
+    if (!esDomicilio) {
+      const resultadoCapacidad = cambiarCapacidadMesa(mesa.id, capacidad);
+      if (!resultadoCapacidad.exito) {
+        setErrorValidacion(resultadoCapacidad.mensaje);
+        return;
+      }
     }
 
     if (onExito) {
@@ -86,6 +98,8 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
     }
     onClose();
   };
+
+  const capacidadesSugeridas = [2, 4, 6, 8, 10, 12];
 
   return (
     <div
@@ -107,9 +121,12 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
               <Pencil className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-base sm:text-lg">Cambiar Nombre de Mesa</h3>
+              <h3 className="font-black text-base sm:text-lg">
+                {esDomicilio ? 'Configurar Pedido a Domicilio' : 'Configurar Mesa y Personas'}
+              </h3>
               <p className="text-xs text-stone-400">
-                Identificador actual: <span className="font-bold text-amber-400">{mesa.nombre}</span>
+                Mesa actual: <span className="font-bold text-amber-400">{mesa.nombre}</span>
+                {!esDomicilio && ` · ${mesa.capacidad} personas`}
               </p>
             </div>
           </div>
@@ -125,6 +142,7 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
 
         {/* Formulario */}
         <form onSubmit={handleGuardar} className="mt-4 space-y-4">
+          {/* Campo de Nombre */}
           <div>
             <label
               htmlFor="input-nombre-mesa"
@@ -132,7 +150,7 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
                 esClaro ? 'text-stone-700' : 'text-stone-300'
               }`}
             >
-              Nuevo Nombre o Etiqueta
+              Nombre o Etiqueta
             </label>
             <input
               id="input-nombre-mesa"
@@ -152,9 +170,95 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
               }`}
             />
             <p className="text-[11px] text-stone-400 mt-1">
-              Este nombre se mostrará en las comandas, tickets y en la pantalla de cocina.
+              Se mostrará en la comanda, tickets y pantalla de cocina.
             </p>
           </div>
+
+          {/* Selector de Capacidad / Número de Personas */}
+          {!esDomicilio && (
+            <div className="pt-2 border-t border-stone-700/30">
+              <div className="flex items-center justify-between mb-2">
+                <label
+                  htmlFor="input-capacidad-mesa"
+                  className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                    esClaro ? 'text-stone-700' : 'text-stone-300'
+                  }`}
+                >
+                  <Users className="w-4 h-4 text-amber-500" />
+                  <span>Número de Personas (Comensales)</span>
+                </label>
+                <span className="text-xs font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                  {capacidad} {capacidad === 1 ? 'persona' : 'personas'}
+                </span>
+              </div>
+
+              {/* Botones de incremento rápido */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCapacidad((prev) => Math.max(1, prev - 1))}
+                  className={`p-2.5 rounded-xl border font-black transition-all active:scale-90 cursor-pointer ${
+                    esClaro
+                      ? 'bg-stone-100 hover:bg-stone-200 border-stone-300 text-stone-800'
+                      : 'bg-stone-800 hover:bg-stone-700 border-stone-700 text-stone-200'
+                  }`}
+                  title="Restar 1 persona"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+
+                <input
+                  id="input-capacidad-mesa"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={capacidad}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) setCapacidad(Math.min(50, Math.max(1, val)));
+                  }}
+                  className={`flex-1 text-center py-2 px-3 rounded-xl border font-black text-base focus:outline-hidden transition-all ${
+                    esClaro
+                      ? 'bg-stone-50 border-stone-300 text-stone-900 focus:border-amber-500'
+                      : 'bg-stone-950 border-stone-700 text-stone-100 focus:border-amber-500'
+                  }`}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setCapacidad((prev) => Math.min(50, prev + 1))}
+                  className={`p-2.5 rounded-xl border font-black transition-all active:scale-90 cursor-pointer ${
+                    esClaro
+                      ? 'bg-stone-100 hover:bg-stone-200 border-stone-300 text-stone-800'
+                      : 'bg-stone-800 hover:bg-stone-700 border-stone-700 text-stone-200'
+                  }`}
+                  title="Sumar 1 persona"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Sugerencias Rápidas */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                {capacidadesSugeridas.map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setCapacidad(num)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                      capacidad === num
+                        ? 'bg-amber-500 text-stone-950 border-amber-400 font-black shadow-sm'
+                        : esClaro
+                        ? 'bg-stone-100 hover:bg-stone-200 text-stone-600 border-stone-200'
+                        : 'bg-stone-800/80 hover:bg-stone-800 text-stone-400 border-stone-700/60'
+                    }`}
+                  >
+                    {num} pers.
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {errorValidacion && (
             <div className="p-2.5 rounded-xl bg-red-950/80 border border-red-500/60 text-xs font-semibold text-red-200 flex items-center gap-2">
@@ -181,7 +285,7 @@ export const ModalRenombrarMesa: React.FC<ModalRenombrarMesaProps> = ({
               className="px-5 py-2.5 rounded-xl text-xs sm:text-sm flex items-center gap-1.5 shadow-lg"
             >
               <Check className="w-4 h-4 stroke-[2.5]" />
-              <span>Guardar Nombre</span>
+              <span>Guardar Cambios</span>
             </BotonOroLiquido>
           </div>
         </form>

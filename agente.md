@@ -39,6 +39,15 @@
   - Cola offline local (`taqueria_cola_offline_v1`) que garantiza funcionamiento ininterrumpido ante pérdidas temporales de internet y sincronización bidireccional automática al recuperar la conectividad.
 
 ## 2. Errores Detectados y Correcciones Aplicadas
+- **Configuración Dinámica de Personas / Capacidad en Mesas (v1.3.6):**
+  - *Contexto:* Previamente, la cantidad de personas era una propiedad estática fijada al crear la mesa y no se podía modificar según los comensales reales que llegaban al restaurante.
+  - *Solución Implementada:*
+    1. Se añadió la acción `cambiarCapacidadMesa(mesaId, nuevaCapacidad)` en [RestauranteContext.tsx](file:///d:/TaqueriaKm243/frontend/src/context/RestauranteContext.tsx), con validación (1 a 50 comensales), sincronización en tiempo real vía WebSockets/BroadcastChannel y persistencia en Supabase.
+    2. En [ModalRenombrarMesa.tsx](file:///d:/TaqueriaKm243/frontend/src/components/ModalRenombrarMesa.tsx), se integró el control de personas con selector rápido (chips de 2, 4, 6, 8, 10, 12 personas) y botones incrementales `+` / `-`, permitiendo ajustar nombre y personas a la vez.
+    3. En [DetalleCuenta.tsx](file:///d:/TaqueriaKm243/frontend/src/components/DetalleCuenta.tsx), se agregó una insignia interactiva `👥 X pers.` en la cabecera de comanda que abre directamente la configuración para cambiar comensales al instante.
+    4. En [DashboardMesas.tsx](file:///d:/TaqueriaKm243/frontend/src/components/DashboardMesas.tsx), al abrir una mesa libre se agregó el selector de comensales para especificar cuántas personas se están sentando antes de iniciar la comanda.
+    5. Despliegue de versión `1.3.6` completado a Supabase Storage y repositorio Git.
+
 - **Fotos de Platillos No Visibles en el Celular (Sincronización de Catálogo v1.3.5):**
   - *Causa:*
     1. Al subir una foto desde la PC, la imagen se convertía en un `data:image/webp;base64,...` y se almacenaba exclusivamente en el `localStorage` del navegador de esa PC (`taqueria_km243_productos_v1`).

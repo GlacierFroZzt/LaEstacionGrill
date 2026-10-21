@@ -33,11 +33,11 @@ const CLAVE_STORAGE_VERSION = 'taqueria_km243_version_instalada';
 const CLAVE_RECARGA_RECIENTE = 'taqueria_frontend_ultima_recarga_ota';
 
 export const VERSION_LOCAL_POR_DEFECTO: InformacionVersion = {
-  version: '1.3.5',
+  version: '1.3.6',
   nombre: 'LA ESTACIÓN GRILL',
-  timestamp: 1792601000000,
+  timestamp: 1792605000000,
   fecha: '21 de octubre de 2026',
-  notas: 'Sincronización remota del catálogo y fotos de platillos vía Supabase Storage entre PC y celulares.',
+  notas: 'Permitir configurar y cambiar dinámicamente el número de personas/comensales en la mesa.',
 };
 
 export const URL_VERSION_SUPABASE =

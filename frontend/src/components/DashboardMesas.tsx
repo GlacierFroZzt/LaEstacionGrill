@@ -3,6 +3,7 @@ import {
   Users,
   Bike,
   Plus,
+  Minus,
   Trash2,
   Settings2,
   CheckCircle2,
@@ -40,6 +41,7 @@ export const DashboardMesas: React.FC = () => {
     mesas,
     seleccionarMesa,
     abrirMesa,
+    cambiarCapacidadMesa,
     solicitarCuenta,
     agregarMesa,
     eliminarMesa,
@@ -57,6 +59,7 @@ export const DashboardMesas: React.FC = () => {
   const [modoEdicion, setModoEdicion] = useState<boolean>(false);
   const [mensajeFeedback, setMensajeFeedback] = useState<MensajeFeedback | null>(null);
   const [mesaParaAbrir, setMesaParaAbrir] = useState<Mesa | null>(null);
+  const [capacidadParaAbrir, setCapacidadParaAbrir] = useState<number>(4);
   const [mesaParaRenombrar, setMesaParaRenombrar] = useState<Mesa | null>(null);
   const [mesaParaMover, setMesaParaMover] = useState<Mesa | null>(null);
 
@@ -92,6 +95,7 @@ export const DashboardMesas: React.FC = () => {
     if (mesa.estado === 'libre') {
       // Doble confirmación obligatoria para evitar aperturas accidentales
       setMesaParaAbrir(mesa);
+      setCapacidadParaAbrir(mesa.capacidad || 4);
       return;
     }
     seleccionarMesa(mesa);
@@ -100,10 +104,14 @@ export const DashboardMesas: React.FC = () => {
   const handleConfirmarApertura = (): void => {
     if (!mesaParaAbrir) return;
     const mesaObjetivo = mesaParaAbrir;
+    const capacidadElegida = capacidadParaAbrir;
     setMesaParaAbrir(null);
+    if (mesaObjetivo.area !== 'domicilio' && capacidadElegida !== mesaObjetivo.capacidad) {
+      cambiarCapacidadMesa(mesaObjetivo.id, capacidadElegida);
+    }
     abrirMesa(mesaObjetivo.id);
-    seleccionarMesa(mesaObjetivo);
-    mostrarMensaje(`Se abrió "${mesaObjetivo.nombre}" para servicio.`, 'exito');
+    seleccionarMesa({ ...mesaObjetivo, capacidad: capacidadElegida });
+    mostrarMensaje(`Se abrió "${mesaObjetivo.nombre}" (${capacidadElegida} personas) para servicio.`, 'exito');
   };
 
   const handleCancelarApertura = (): void => {
@@ -845,11 +853,76 @@ export const DashboardMesas: React.FC = () => {
               ¿Abrir {mesaParaAbrir.nombre}?
             </h3>
 
-            <p className="text-xs sm:text-sm text-stone-300 leading-relaxed max-w-xs mb-5">
+            <p className="text-xs sm:text-sm text-stone-300 leading-relaxed max-w-xs mb-3">
               {mesaParaAbrir.area === 'domicilio'
                 ? '¿Deseas iniciar este pedido a domicilio para comenzar a registrar platillos y comanda?'
-                : `¿Deseas abrir esta mesa (capacidad sugerida: ${mesaParaAbrir.capacidad} personas) para iniciar el servicio y tomar la comanda?`}
+                : 'Selecciona cuántas personas ocuparán la mesa para iniciar el servicio:'}
             </p>
+
+            {/* Selector de Personas antes de abrir (Solo para mesas convencionales) */}
+            {mesaParaAbrir.area !== 'domicilio' && (
+              <div className="w-full bg-stone-900/90 border border-stone-800 rounded-2xl p-3 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-stone-400 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-amber-500" />
+                    Personas en la mesa:
+                  </span>
+                  <span className="text-xs font-black text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2.5 py-0.5 rounded-full">
+                    {capacidadParaAbrir} {capacidadParaAbrir === 1 ? 'persona' : 'personas'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setCapacidadParaAbrir((p) => Math.max(1, p - 1))}
+                    className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold active:scale-90 cursor-pointer"
+                    title="Menos personas"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={capacidadParaAbrir}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!isNaN(v)) setCapacidadParaAbrir(Math.min(50, Math.max(1, v)));
+                    }}
+                    className="flex-1 text-center py-1.5 px-2 rounded-xl bg-stone-950 border border-stone-700 text-stone-100 font-black text-sm focus:outline-hidden focus:border-amber-500"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setCapacidadParaAbrir((p) => Math.min(50, p + 1))}
+                    className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold active:scale-90 cursor-pointer"
+                    title="Más personas"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Chips rápidos */}
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {[2, 4, 6, 8, 10].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setCapacidadParaAbrir(num)}
+                      className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                        capacidadParaAbrir === num
+                          ? 'bg-amber-500 text-stone-950 border-amber-400 font-black'
+                          : 'bg-stone-800 text-stone-400 border-stone-700 hover:bg-stone-700'
+                      }`}
+                    >
+                      {num} pers.
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Acciones de Doble Confirmación */}
             <div className="w-full flex flex-col gap-2">
