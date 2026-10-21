@@ -53,7 +53,18 @@ export const ModalActualizacionOta: React.FC<PropsModalActualizacionOta> = ({
     setActualizando(true);
     setMensajeError(null);
     try {
-      await servicioActualizaciones.aplicarActualizacion();
+      if (resultado?.hayActualizacion) {
+        await servicioActualizaciones.aplicarActualizacion();
+      } else {
+        // Si no hay actualización detectada por semver, re-verificar de inmediato
+        const nuevoRes = await servicioActualizaciones.verificarActualizacion();
+        setResultado(nuevoRes);
+        if (nuevoRes.hayActualizacion) {
+          await servicioActualizaciones.aplicarActualizacion();
+        } else {
+          setActualizando(false);
+        }
+      }
     } catch (err: unknown) {
       console.error('[ModalActualizacionOta] Error aplicando actualización:', err);
       setMensajeError('No se pudo aplicar la actualización automáticamente.');

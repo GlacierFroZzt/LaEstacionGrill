@@ -33,11 +33,11 @@ const CLAVE_STORAGE_VERSION = 'taqueria_km243_version_instalada';
 const CLAVE_RECARGA_RECIENTE = 'taqueria_frontend_ultima_recarga_ota';
 
 export const VERSION_LOCAL_POR_DEFECTO: InformacionVersion = {
-  version: '1.2.9',
+  version: '1.3.4',
   nombre: 'LA ESTACIÓN GRILL',
-  timestamp: 1792446000000,
-  fecha: '20 de octubre de 2026',
-  notas: 'Pantallas reales de Comandero, DetalleCuenta, Cocina y Cobro en tutorial con Sandbox.',
+  timestamp: 1792463000000,
+  fecha: '21 de octubre de 2026',
+  notas: 'Botón de 3 puntos en esquina superior derecha de platillos para gestionar y editar fácilmente.',
 };
 
 export const URL_VERSION_SUPABASE =
@@ -257,11 +257,14 @@ export class ServicioActualizaciones {
 
   /**
    * Aplica la actualización en caliente de forma segura.
+   * Si forzar es true, omite la verificación de versión y aplica el paquete directamente.
    */
-  public async aplicarActualizacion(): Promise<void> {
+  public async aplicarActualizacion(forzar = false): Promise<void> {
     try {
-      const resultado = await this.verificarActualizacion();
-      if (!resultado.hayActualizacion || !resultado.versionRemota) return;
+      if (!forzar) {
+        const resultado = await this.verificarActualizacion();
+        if (!resultado.hayActualizacion || !resultado.versionRemota) return;
+      }
 
       // 1. Marcar en sessionStorage para proteger contra bucles de recarga
       if (typeof window !== 'undefined') {
@@ -297,6 +300,7 @@ export class ServicioActualizaciones {
       }
     } catch (e) {
       console.error('[ServicioActualizaciones] Error al aplicar actualización:', e);
+      throw e;
     }
   }
 
