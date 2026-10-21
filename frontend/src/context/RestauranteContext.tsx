@@ -890,6 +890,14 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
+    // 1.5 Cargar catálogo global remoto de Supabase Storage si está disponible
+    servicioSupabase.obtenerCatalogoProductosRemoto().then((catalogoRemoto) => {
+      if (Array.isArray(catalogoRemoto) && catalogoRemoto.length > 0) {
+        setProductos(catalogoRemoto);
+        RepositorioStorage.guardarProductos(catalogoRemoto);
+      }
+    }).catch(console.warn);
+
     return () => {
       desuscribir();
     };
@@ -918,6 +926,13 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         if (typeof datos?.clientesConectadosCount === 'number') {
           setDispositivosConectados(datos.clientesConectadosCount);
         }
+      } else if (tipo === 'CATALOGO_PRODUCTOS_REMOTO_ACTUALIZADO') {
+        servicioSupabase.obtenerCatalogoProductosRemoto().then((catalogoRemoto) => {
+          if (Array.isArray(catalogoRemoto) && catalogoRemoto.length > 0) {
+            setProductos(catalogoRemoto);
+            RepositorioStorage.guardarProductos(catalogoRemoto);
+          }
+        }).catch(console.warn);
       } else if (tipo === 'MESA_REMOTA_ACTUALIZADA' && payload) {
         interface FilaMesaRaw {
           id: string;
@@ -1258,6 +1273,16 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
           ? datos.id.trim()
           : `prod-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
+      // Subir foto a Supabase Storage para que sea accesible en celulares y tablets
+      let fotoFinalUrl = datos.imagenUrl;
+      if (fotoFinalUrl && fotoFinalUrl.startsWith('data:')) {
+        try {
+          fotoFinalUrl = await servicioSupabase.subirFotoPlatillo(nuevoId, fotoFinalUrl);
+        } catch (errFoto) {
+          console.warn('[RestauranteContext] Falló subida de foto a Supabase Storage:', errFoto);
+        }
+      }
+
       const nuevo: Producto = {
         id: nuevoId,
         nombre: datos.nombre.trim(),
@@ -1268,7 +1293,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
           datos.modificadoresSugeridos && datos.modificadoresSugeridos.length > 0
             ? [...datos.modificadoresSugeridos]
             : undefined,
-        imagenUrl: datos.imagenUrl,
+        imagenUrl: fotoFinalUrl,
         requierePreparacion: datos.requierePreparacion,
       };
 
@@ -1276,6 +1301,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const actualizados = [nuevo, ...prev];
         RepositorioStorage.guardarProductos(actualizados);
         servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
+        servicioSupabase.guardarCatalogoProductosRemoto(actualizados).catch(console.warn);
         return actualizados;
       });
 
@@ -1301,6 +1327,16 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
    */
   const editarProducto = useCallback(
     async (id: string, datos: FormularioProductoDTO): Promise<void> => {
+      // Si la foto es un DataURL nuevo en base64, subirla a Supabase Storage
+      let fotoFinalUrl = datos.imagenUrl;
+      if (fotoFinalUrl && fotoFinalUrl.startsWith('data:')) {
+        try {
+          fotoFinalUrl = await servicioSupabase.subirFotoPlatillo(id, fotoFinalUrl);
+        } catch (errFoto) {
+          console.warn('[RestauranteContext] Falló subida de foto editada a Supabase Storage:', errFoto);
+        }
+      }
+
       setProductos((prev) => {
         const actualizados = prev.map((p) => {
           if (p.id !== id) return p;
@@ -1311,7 +1347,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
             precio: Math.max(0, Number(datos.precio) || 0),
             categoria: datos.categoria,
             modificadoresSugeridos: datos.modificadoresSugeridos,
-            imagenUrl: datos.imagenUrl !== undefined ? datos.imagenUrl : p.imagenUrl,
+            imagenUrl: fotoFinalUrl !== undefined ? fotoFinalUrl : p.imagenUrl,
             requierePreparacion:
               datos.requierePreparacion !== undefined
                 ? datos.requierePreparacion
@@ -1320,6 +1356,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
         RepositorioStorage.guardarProductos(actualizados);
         servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
+        servicioSupabase.guardarCatalogoProductosRemoto(actualizados).catch(console.warn);
         return actualizados;
       });
 
@@ -1351,6 +1388,7 @@ export const RestauranteProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const actualizados = prev.filter((p) => p.id !== id);
         RepositorioStorage.guardarProductos(actualizados);
         servicioSincronizacion.emitir('CATALOGO_PRODUCTOS_ACTUALIZADO', actualizados);
+        servicioSupabase.guardarCatalogoProductosRemoto(actualizados).catch(console.warn);
         return actualizados;
       });
 

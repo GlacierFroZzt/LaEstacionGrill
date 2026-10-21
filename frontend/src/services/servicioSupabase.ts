@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import type { Mesa, Cuenta, PedidoCocina, CorteCaja, TurnoCerrado } from '../types';
+import type { Mesa, Cuenta, PedidoCocina, CorteCaja, TurnoCerrado, Producto } from '../types';
 import { deduplicarYSanearMesas } from '../utils/saneadorMesas';
 import { servicioDeteccionIp } from './servicioDeteccionIp';
 import { RepositorioStorage } from './repositorioStorage';
@@ -269,6 +269,13 @@ class ServicioSupabase {
           { event: '*', schema: 'public', table: 'cortes_caja' },
           (payload) => {
             this.notificarListeners('CORTE_REMOTO_ACTUALIZADO', payload.new);
+          }
+        )
+        .on(
+          'broadcast',
+          { event: 'CATALOGO_PRODUCTOS_ACTUALIZADO' },
+          (payload) => {
+            this.notificarListeners('CATALOGO_PRODUCTOS_REMOTO_ACTUALIZADO', payload);
           }
         )
         .on(
@@ -1176,6 +1183,132 @@ class ServicioSupabase {
     } catch (err: unknown) {
       console.error('[ServicioSupabase.obtenerHistorialCortes] Excepción:', err);
       return [];
+    }
+  }
+
+  // =========================================================================
+  // GESTIÓN DEL CATÁLOGO DE PRODUCTOS EN LA NUBE (SUPABASE STORAGE)
+  // =========================================================================
+
+  /**
+   * Sube una foto en base64 (DataURL) a Supabase Storage y retorna la URL pública permanente.
+   * Si ya es una URL HTTP(S), la devuelve intacta sin procesar.
+   */
+  public async subirFotoPlatillo(idProducto: string, dataUrl: string): Promise<string> {
+    if (!this.cliente || !dataUrl || !dataUrl.startsWith('data:')) {
+      return dataUrl;
+    }
+
+    try {
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) {
+        return dataUrl;
+      }
+
+      const mimeType = match[1] || 'image/webp';
+      const base64Data = match[2];
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+
+      const extension = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'webp';
+      const nombreArchivo = `fotos/${idProducto}-${Date.now()}.${extension}`;
+
+      const { error } = await this.cliente.storage
+        .from('actualizaciones')
+        .upload(nombreArchivo, byteNumbers, {
+          contentType: mimeType,
+          upsert: true,
+          cacheControl: '31536000',
+        });
+
+      if (error) {
+        console.warn('[ServicioSupabase] Error subiendo foto a storage:', error.message);
+        return dataUrl;
+      }
+
+      const creds = this.obtenerCredenciales();
+      const urlPublica = `${creds.url}/storage/v1/object/public/actualizaciones/${nombreArchivo}`;
+      console.log(`[ServicioSupabase] Foto de platillo subida con éxito: ${urlPublica}`);
+      return urlPublica;
+    } catch (err: unknown) {
+      console.error('[ServicioSupabase] Error al convertir/subir foto de platillo:', err);
+      return dataUrl;
+    }
+  }
+
+  /**
+   * Guarda y sincroniza la lista completa de productos en Supabase Storage (catalogo/productos.json).
+   */
+  public async guardarCatalogoProductosRemoto(productos: Producto[]): Promise<boolean> {
+    if (!this.cliente) return false;
+
+    try {
+      const contenidoJson = JSON.stringify(productos);
+      const blob = new Blob([contenidoJson], { type: 'application/json' });
+
+      const { error } = await this.cliente.storage
+        .from('actualizaciones')
+        .upload('catalogo/productos.json', blob, {
+          contentType: 'application/json',
+          upsert: true,
+          cacheControl: '15',
+        });
+
+      if (error) {
+        console.warn('[ServicioSupabase] Error al guardar catálogo en storage:', error.message);
+        return false;
+      }
+
+      // Notificar por Broadcast Realtime si el canal está abierto
+      if (this.canal) {
+        try {
+          this.canal.send({
+            type: 'broadcast',
+            event: 'CATALOGO_PRODUCTOS_ACTUALIZADO',
+            payload: { timestamp: Date.now() },
+          });
+        } catch {
+          // Ignorar si el canal no está listo
+        }
+      }
+
+      console.log('[ServicioSupabase] Catálogo de productos sincronizado con Supabase Storage.');
+      return true;
+    } catch (err: unknown) {
+      console.error('[ServicioSupabase] Excepción al guardar catálogo en Supabase Storage:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Descarga el catálogo global de productos desde Supabase Storage si existe.
+   */
+  public async obtenerCatalogoProductosRemoto(): Promise<Producto[] | null> {
+    try {
+      const creds = this.obtenerCredenciales();
+      const urlPublica = `${creds.url}/storage/v1/object/public/actualizaciones/catalogo/productos.json?_t=${Date.now()}`;
+      const resp = await fetch(urlPublica, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
+
+      if (!resp.ok) {
+        return null;
+      }
+
+      const datos = (await resp.json()) as Producto[];
+      if (Array.isArray(datos) && datos.length > 0) {
+        return datos;
+      }
+      return null;
+    } catch (err: unknown) {
+      console.warn('[ServicioSupabase] No se pudo descargar catálogo remoto de productos:', err);
+      return null;
     }
   }
 }

@@ -39,6 +39,18 @@
   - Cola offline local (`taqueria_cola_offline_v1`) que garantiza funcionamiento ininterrumpido ante pérdidas temporales de internet y sincronización bidireccional automática al recuperar la conectividad.
 
 ## 2. Errores Detectados y Correcciones Aplicadas
+- **Fotos de Platillos No Visibles en el Celular (Sincronización de Catálogo v1.3.5):**
+  - *Causa:*
+    1. Al subir una foto desde la PC, la imagen se convertía en un `data:image/webp;base64,...` y se almacenaba exclusivamente en el `localStorage` del navegador de esa PC (`taqueria_km243_productos_v1`).
+    2. Como Supabase sólo sincronizaba las tablas de `mesas`, `cuentas`, `pedidos_cocina` y `cortes_caja`, los celulares y tablets corrían su propio catálogo local aislado, sin recibir ni el nuevo platillo ni la foto cargada en la PC.
+  - *Corrección:*
+    1. Se implementó en [servicioSupabase.ts](file:///d:/TaqueriaKm243/frontend/src/services/servicioSupabase.ts):
+       - `subirFotoPlatillo(idProducto, dataUrl)`: Convierte el Base64 en bytes binarios y lo almacena de forma pública y permanente en Supabase Storage (`fotos/{idProducto}-{timestamp}.webp`). Retorna la URL pública accesible por cualquier dispositivo con internet.
+       - `guardarCatalogoProductosRemoto(productos)`: Persiste el catálogo consolidado en `actualizaciones/catalogo/productos.json` y emite un evento `broadcast` por Supabase Realtime a todos los dispositivos activos.
+       - `obtenerCatalogoProductosRemoto()`: Descarga automáticamente el catálogo con las fotos remotas al arrancar la app o al recibir la notificación en tiempo real.
+    2. En [RestauranteContext.tsx](file:///d:/TaqueriaKm243/frontend/src/context/RestauranteContext.tsx), `agregarProducto` y `editarProducto` ahora procesan la subida en la nube y sincronizan el catálogo automáticamente.
+    3. Se incrementó la versión a **`1.3.5`**, se reconstruyeron los bundles de Android e iOS y se desplegó a Supabase Storage (`version.json` y `web-bundle.zip`).
+
 - **Bloqueo y Falta de Detección en Actualizaciones OTA (v1.3.4):**
   - *Causa:*
     1. Al hacer el commit anterior con los cambios del Comandero, solo se subió a Git sin ejecutar el pipeline de compilación de assets, empaquetado de `web-bundle.zip` y subida a Supabase Storage con `version.json` incrementado.

@@ -1,7 +1,7 @@
 {
-  "version": "1.3.4",
+  "version": "1.3.5",
   "nombre": "LA ESTACIÓN GRILL",
-  "timestamp": 1792600011898,
+  "timestamp": 1792603106398,
   "fecha": "21 de octubre de 2026",
-  "notas": "Botón de 3 puntos en esquina superior derecha de platillos para gestionar y editar fácilmente."
+  "notas": "Sincronización remota del catálogo y fotos de platillos vía Supabase Storage entre PC y celulares."
 }
