@@ -11,13 +11,13 @@ import {
   Trash2,
   AlertTriangle,
   Image as ImageIcon,
+  MoreVertical,
 } from 'lucide-react';
 import type { CategoriaProducto, Producto, FormularioProductoDTO } from '../types';
 import { ModificadorModal } from './ModificadorModal';
 import { useRestaurante } from '../context/RestauranteContext';
 import { formatearMoneda } from '../utils/formateadores';
 import { BotonOroLiquido } from './BotonOroLiquido';
-import { usePulsacionProlongada } from '../hooks/usePulsacionProlongada';
 import { ModalOpcionesProducto } from './ModalOpcionesProducto';
 import { ModalFormularioProducto } from './ModalFormularioProducto';
 import { ModalVisorImagen } from './ModalVisorImagen';
@@ -39,40 +39,45 @@ const TarjetaProductoItem = memo<TarjetaProductoItemProps>(({
   onSeleccionar,
   onAbrirOpciones,
 }) => {
-  const gestos = usePulsacionProlongada(() => onAbrirOpciones(prod), {
-    tiempoMs: 500,
-    umbralMovimientoPx: 10,
-  });
-
   const tieneImagen = Boolean(prod.imagenUrl && prod.imagenUrl.trim().length > 0);
 
   return (
     <div
       role="button"
       tabIndex={0}
-      onTouchStart={gestos.onTouchStart}
-      onTouchMove={gestos.onTouchMove}
-      onTouchEnd={gestos.onTouchEnd}
-      onTouchCancel={gestos.onTouchCancel}
-      onMouseDown={gestos.onMouseDown}
-      onMouseUp={gestos.onMouseUp}
-      onMouseLeave={gestos.onMouseLeave}
-      onContextMenu={gestos.onContextMenu}
-      onClick={(e) => gestos.handleClickSeguro(e, () => onSeleccionar(prod))}
+      onClick={() => onSeleccionar(prod)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onSeleccionar(prod);
         }
       }}
-      title="Toca para ordenar. Mantén pulsado o da clic derecho para editar, eliminar o ver foto."
+      title="Toca para agregar a la orden"
       className={`tarjeta-tactil-suave group text-left p-3 sm:p-3.5 rounded-2xl flex flex-col justify-between transition-all duration-150 active:scale-95 border min-h-[130px] cursor-pointer select-none relative ${
         esClaro
           ? 'bg-white hover:bg-amber-50/40 border-stone-200 hover:border-amber-400 hover:shadow-md hover:sombra-dorada'
           : 'bg-stone-900/90 hover:bg-stone-850 border-stone-800 hover:border-amber-500/80 hover:shadow-md hover:sombra-dorada'
       }`}
     >
-      <div className="flex items-start gap-2.5">
+      {/* Botón de 3 puntos en la esquina superior derecha */}
+      <button
+        type="button"
+        aria-label={`Opciones de ${prod.nombre}`}
+        title="Opciones del platillo (editar, foto, eliminar)"
+        onClick={(e) => {
+          e.stopPropagation();
+          onAbrirOpciones(prod);
+        }}
+        className={`absolute top-2 right-2 p-1.5 rounded-full z-10 transition-colors ${
+          esClaro
+            ? 'text-stone-400 hover:text-stone-800 hover:bg-stone-200/80 active:bg-stone-300'
+            : 'text-stone-400 hover:text-stone-100 hover:bg-stone-800 active:bg-stone-700'
+        }`}
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+
+      <div className="flex items-start gap-2.5 pr-6">
         {tieneImagen && (
           <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden shrink-0 border border-amber-500/30 bg-stone-950">
             <img
@@ -229,7 +234,7 @@ export const Comandero: React.FC<ComanderoProps> = ({ onVerCuentaMovil }) => {
     }
   };
 
-  // Manejadores de Opciones de Gestión (Pulsación Prolongada / Clic Derecho)
+  // Manejadores de Opciones de Gestión (Botón de 3 puntos)
   const handleAbrirOpciones = (prod: Producto): void => {
     setProductoSeleccionadoOpciones(prod);
     setModalOpcionesAbierto(true);
@@ -542,7 +547,7 @@ export const Comandero: React.FC<ComanderoProps> = ({ onVerCuentaMovil }) => {
         />
       )}
 
-      {/* Menú Contextual de Opciones (al mantener pulsado o clic derecho) */}
+      {/* Menú Contextual de Opciones (botón 3 puntos) */}
       <ModalOpcionesProducto
         producto={productoSeleccionadoOpciones}
         abierto={modalOpcionesAbierto}

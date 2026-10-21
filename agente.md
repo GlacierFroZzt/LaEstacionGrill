@@ -39,6 +39,10 @@
   - Cola offline local (`taqueria_cola_offline_v1`) que garantiza funcionamiento ininterrumpido ante pérdidas temporales de internet y sincronización bidireccional automática al recuperar la conectividad.
 
 ## 2. Errores Detectados y Correcciones Aplicadas
+- **Acceso a Opciones del Platillo (Botón de 3 Puntos vs Gestos Prolongados):**
+  - *Contexto:* Previamente, para editar, eliminar o ver foto de un platillo se requería mantener presionado (500 ms) o hacer clic derecho, lo cual causaba fricción táctil o confusiones en pantallas táctiles y ratón al comandar.
+  - *Corrección:* Se reemplazó la lógica de gestos por un botón dedicado con el icono de 3 puntos (`MoreVertical`) en la esquina superior derecha de la tarjeta (`TarjetaProductoItem` en `Comandero.tsx`). Al pulsarlo con `stopPropagation`, abre instantáneamente el modal de opciones sin activar la orden del platillo, y al tocar el resto de la tarjeta se agrega o selecciona el platillo directamente.
+
 - **Identidad Comercial en Pantalla de PIN (La Estación Grill):**
   - *Causa:* La pantalla de bloqueo y entrada por PIN (`PantallaBloqueoPin.tsx`) y el modal de manual (`ModalManualFunciones.tsx`) aún mostraban la etiqueta estática del nombre anterior `Taquería Km 243`.
   - *Corrección:* Se modificó quirúrgicamente la insignia por `La Estación Grill`, se incrementó la versión a `1.3.3` y se desplegó vía OTA a Supabase Storage y Git.
