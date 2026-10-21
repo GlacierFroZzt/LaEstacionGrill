@@ -147,7 +147,7 @@ export const PantallaBloqueoPin: React.FC = () => {
 
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-900 border border-stone-800 text-[11px] font-semibold text-amber-400 uppercase tracking-wider mb-2">
           <Flame className="w-3.5 h-3.5 text-amber-500" />
-          <span>Taquería Km 243</span>
+          <span>La Estación Grill</span>
         </div>
 
         <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white mb-1">

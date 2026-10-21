@@ -96,7 +96,7 @@ export const ModalManualFunciones: React.FC<PropsModalManualFunciones> = ({
                   Manual de Funciones y Ayuda
                 </h3>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  Taquería Km 243
+                  La Estación Grill
                 </span>
               </div>
               <p className="text-xs text-stone-400">
