@@ -39,6 +39,9 @@
   - Cola offline local (`taqueria_cola_offline_v1`) que garantiza funcionamiento ininterrumpido ante pérdidas temporales de internet y sincronización bidireccional automática al recuperar la conectividad.
 
 ## 2. Errores Detectados y Correcciones Aplicadas
+- **Identidad Comercial en Pantalla de PIN (La Estación Grill):**
+  - *Causa:* La pantalla de bloqueo y entrada por PIN (`PantallaBloqueoPin.tsx`) y el modal de manual (`ModalManualFunciones.tsx`) aún mostraban la etiqueta estática del nombre anterior `Taquería Km 243`.
+  - *Corrección:* Se modificó quirúrgicamente la insignia por `La Estación Grill`, se incrementó la versión a `1.3.3` y se desplegó vía OTA a Supabase Storage y Git.
 - **Condición de Carrera en Cocina (Tarjetas Reaparecen y Platillos se Desmarcan):**
   - *Causa:*
     1. El temporizador de latido (heartbeat) de Supabase (`servicioSupabase.ts`) emitía `ESTADO_CONEXION_ACTUALIZADO` cada 8 segundos incluso estando ya conectado, lo cual provocaba que `RestauranteContext.tsx` ejecutara `sincronizarConServidorRemoto()` constantemente descargando el estado no actualizado del servidor.
